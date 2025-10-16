@@ -360,7 +360,14 @@ export class TestRunner {
     // Track test results
     const testResults = new Map<
       string,
-      { passed: boolean; message?: string; duration?: number }
+      { 
+        passed: boolean; 
+        message?: string; 
+        duration?: number;
+        stack?: string;
+        expected?: any;
+        actual?: any;
+      }
     >();
 
     try {
@@ -393,6 +400,9 @@ export class TestRunner {
               passed: passed,
               message: test.err?.message,
               duration: test.duration,
+              stack: test.err?.stack,
+              expected: test.err?.expected,
+              actual: test.err?.actual,
             });
           }
         }
@@ -534,30 +544,44 @@ export class TestRunner {
     const mochaPath = await this.getMochaPath(workspacePath, isPnP);
     this.outputChannel.appendLine(`  ✓ Mocha path: ${mochaPath}`);
     
-    // Build the command
-    const args = [
+    // Build the command - run twice: once with spec for output, once with json for parsing
+    const jsonArgs = [
       ...nodeArgs,
       mochaPath,
       testFilePath,
-      '--reporter', 'json', // Use JSON reporter for easy parsing
+      '--reporter', 'json', // Use JSON reporter for parsing results
       '--ui', 'bdd',
       '--timeout', '5000',
     ];
 
-    this.outputChannel.appendLine(`  Running command: node ${args.join(' ')}`);
+    const specArgs = [
+      ...nodeArgs,
+      mochaPath,
+      testFilePath,
+      '--reporter', 'spec', // Use spec reporter for clean terminal output
+      '--ui', 'bdd',
+      '--timeout', '5000',
+    ];
+
+    this.outputChannel.appendLine(`  Running command: node ${jsonArgs.join(' ')}`);
 
     // Track test results
     const testResults = new Map<
       string,
-      { passed: boolean; message?: string; duration?: number }
+      { 
+        passed: boolean; 
+        message?: string; 
+        duration?: number;
+        stack?: string;
+        expected?: any;
+        actual?: any;
+      }
     >();
 
     try {
+      // First, run with spec reporter for clean output display
       await new Promise<void>((resolve, reject) => {
-        let stdout = '';
-        let stderr = '';
-
-        const child = spawn('node', args, {
+        const child = spawn('node', specArgs, {
           cwd: workspacePath,
           env: {
             ...process.env,
@@ -567,26 +591,61 @@ export class TestRunner {
 
         child.stdout?.on('data', (data) => {
           const output = data.toString();
-          stdout += output;
           this.outputChannel.appendLine(`  [stdout] ${output.trim()}`);
+          // Append clean spec output to the run for display in Test Results
+          run.appendOutput(output.replace(/\n/g, '\r\n'));
         });
 
         child.stderr?.on('data', (data) => {
           const output = data.toString();
-          stderr += output;
           this.outputChannel.appendLine(`  [stderr] ${output.trim()}`);
+          // Append error output to the run
+          run.appendOutput(output.replace(/\n/g, '\r\n'));
         });
 
         child.on('error', (error) => {
           this.outputChannel.appendLine(
-            `  ❌ Failed to spawn Mocha: ${error.message}`
+            `  ❌ Failed to spawn Mocha (spec): ${error.message}`
+          );
+          reject(error);
+        });
+
+        child.on('close', () => {
+          resolve();
+        });
+      });
+
+      // Then, run with JSON reporter for parsing test results
+      await new Promise<void>((resolve, reject) => {
+        let stdout = '';
+        let stderr = '';
+
+        const child = spawn('node', jsonArgs, {
+          cwd: workspacePath,
+          env: {
+            ...process.env,
+            NODE_OPTIONS: nodeArgs.length > 0 ? nodeArgs.join(' ') : undefined,
+          },
+        });
+
+        child.stdout?.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        child.stderr?.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        child.on('error', (error) => {
+          this.outputChannel.appendLine(
+            `  ❌ Failed to spawn Mocha (json): ${error.message}`
           );
           reject(error);
         });
 
         child.on('close', (code) => {
           this.outputChannel.appendLine(
-            `  Mocha process exited with code ${code}`
+            `  Mocha JSON reporter exited with code ${code}`
           );
 
           // Parse JSON output
@@ -608,6 +667,9 @@ export class TestRunner {
                   passed: passed,
                   message: test.err?.message,
                   duration: test.duration,
+                  stack: test.err?.stack,
+                  expected: test.err?.expected,
+                  actual: test.err?.actual,
                 });
               }
             }
@@ -626,17 +688,6 @@ export class TestRunner {
             }
             resolve();
           }
-        });
-
-        // Handle cancellation
-        if (token.isCancellationRequested) {
-          child.kill();
-          reject(new Error('Test run cancelled'));
-        }
-
-        token.onCancellationRequested(() => {
-          child.kill();
-          reject(new Error('Test run cancelled'));
         });
       });
 
@@ -869,7 +920,14 @@ export class TestRunner {
   private updateTestResults(
     fileItem: vscode.TestItem,
     run: vscode.TestRun,
-    results: Map<string, { passed: boolean; message?: string; duration?: number }>
+    results: Map<string, { 
+      passed: boolean; 
+      message?: string; 
+      duration?: number;
+      stack?: string;
+      expected?: any;
+      actual?: any;
+    }>
   ): void {
     this.updateChildResults(fileItem, run, results);
   }
@@ -877,7 +935,14 @@ export class TestRunner {
   private updateChildResults(
     item: vscode.TestItem,
     run: vscode.TestRun,
-    results: Map<string, { passed: boolean; message?: string; duration?: number }>
+    results: Map<string, { 
+      passed: boolean; 
+      message?: string; 
+      duration?: number;
+      stack?: string;
+      expected?: any;
+      actual?: any;
+    }>
   ): void {
     const data = this.testData.get(item);
 
@@ -897,11 +962,9 @@ export class TestRunner {
           if (result.passed) {
             run.passed(item, result.duration);
           } else {
-            run.failed(
-              item,
-              new vscode.TestMessage(result.message || 'Test failed'),
-              result.duration
-            );
+            // Create enhanced test message with location and diff
+            const testMessage = this.createTestMessage(result, item);
+            run.failed(item, testMessage, result.duration);
           }
           return;
         }
@@ -916,6 +979,103 @@ export class TestRunner {
     for (const [, child] of item.children) {
       this.updateChildResults(child, run, results);
     }
+  }
+
+  /**
+   * Create an enhanced TestMessage with location and diff information
+   */
+  private createTestMessage(
+    result: {
+      message?: string;
+      stack?: string;
+      expected?: any;
+      actual?: any;
+    },
+    item: vscode.TestItem
+  ): vscode.TestMessage {
+    const message = new vscode.TestMessage(result.message || 'Test failed');
+
+    // Add stack trace if available
+    if (result.stack) {
+      message.stackTrace = this.parseStackTrace(result.stack, item.uri);
+    }
+
+    // Add expected/actual for assertion failures
+    if (result.expected !== undefined && result.actual !== undefined) {
+      message.expectedOutput = this.formatValue(result.expected);
+      message.actualOutput = this.formatValue(result.actual);
+    }
+
+    return message;
+  }
+
+  /**
+   * Parse stack trace string into TestMessageStackFrame array
+   */
+  private parseStackTrace(
+    stack: string,
+    testFileUri?: vscode.Uri
+  ): vscode.TestMessageStackFrame[] {
+    const frames: vscode.TestMessageStackFrame[] = [];
+    const lines = stack.split('\n');
+
+    for (const line of lines) {
+      // Match stack frame format: "at functionName (file:line:column)" or "at file:line:column"
+      const match = line.match(/at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?/);
+      if (match) {
+        const [, label, file, lineStr, columnStr] = match;
+        const lineNum = parseInt(lineStr, 10) - 1; // VS Code uses 0-based line numbers
+        const column = parseInt(columnStr, 10) - 1;
+
+        // Create URI for the file
+        let uri: vscode.Uri;
+        if (file.startsWith('file://')) {
+          uri = vscode.Uri.parse(file);
+        } else if (path.isAbsolute(file)) {
+          uri = vscode.Uri.file(file);
+        } else if (testFileUri) {
+          // Relative path, resolve against test file directory
+          const dir = path.dirname(testFileUri.fsPath);
+          uri = vscode.Uri.file(path.join(dir, file));
+        } else {
+          continue; // Skip if we can't resolve the path
+        }
+
+        const position = new vscode.Position(lineNum, column);
+        const location = new vscode.Location(uri, position);
+
+        frames.push({
+          uri,
+          position,
+          label: label || path.basename(file),
+        });
+      }
+    }
+
+    return frames;
+  }
+
+  /**
+   * Format expected/actual values for display
+   */
+  private formatValue(value: any): string {
+    if (value === undefined) {
+      return 'undefined';
+    }
+    if (value === null) {
+      return 'null';
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value);
   }
 
   /**

@@ -2,6 +2,24 @@
 
 All notable changes to the "Mocha Test Adapter" extension will be documented in this file.
 
+## [0.0.3] - 2025-10-16
+
+### Added
+- **Test Output Capture**: All test output is now captured and displayed in the Test Results view
+  - Console.log statements appear in the output terminal
+  - Mocha execution output is preserved with ANSI colors
+  - Access output via the terminal icon in Testing panel
+- **Enhanced Error Messages**: Failed tests now show rich error information
+  - Stack traces with clickable file links to jump to error location
+  - Expected vs. Actual diffs for assertion failures
+  - Full error context from Mocha with proper formatting
+
+### Technical Details
+- Implemented `run.appendOutput()` for test output streaming
+- Created enhanced `TestMessage` objects with stack traces and diffs
+- Added stack trace parsing to extract file locations and line numbers
+- Proper handling of expected/actual values for assertion libraries
+
 ## [0.0.2] - 2025-10-16
 
 ### Added
@@ -16,6 +34,7 @@ All notable changes to the "Mocha Test Adapter" extension will be documented in 
 ### Fixed
 - Test results now correctly display pass/fail status in VS Code UI
 - Fixed test matching logic to properly build full test paths for accurate result association
+- Fixed TestCoverageCount to use (covered, total) instead of (covered, uncovered)
 
 ## [0.0.1] - 2025-10-16
 

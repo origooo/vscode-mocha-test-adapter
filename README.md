@@ -9,6 +9,8 @@ A VS Code extension that provides Mocha test integration using the native Testin
 - **Run Individual Tests**: Execute single tests, test suites, or entire files
 - **Debug Support**: Full debugging with breakpoints and source maps
 - **Code Coverage**: Built-in coverage support with detailed statement and branch coverage
+- **Test Output**: Captures and displays console.log() and test output in Test Results view
+- **Enhanced Error Messages**: Shows stack traces with clickable file links and diffs for assertion failures
 - **Real-time Updates**: Watches for file changes and updates tests automatically
 - **Nested Suites**: Properly handles nested `describe` blocks
 - **TypeScript & JavaScript**: Supports both TS and JS test files
@@ -55,6 +57,25 @@ Run tests with coverage to see which parts of your code are tested:
 3. **Coverage Files**: Temporary coverage data is automatically cleaned up after viewing
 
 The extension uses [c8](https://github.com/bcoe/c8) for coverage collection, which provides accurate coverage for both JavaScript and TypeScript with full ESM support.
+
+### Viewing Test Output
+
+When tests run, their output is captured and displayed:
+
+1. **Test Results View**: Click the terminal icon (📺) in the Testing panel to view test output
+2. **Console Logs**: Any `console.log()` statements in your tests will appear in the output
+3. **Mocha Output**: Test execution details and summaries are displayed
+4. **ANSI Colors**: Colored output is preserved for better readability
+
+### Enhanced Error Messages
+
+When tests fail, you get detailed information:
+
+- **Stack Traces**: Clickable links to the exact line where the error occurred
+- **Assertion Diffs**: For failed assertions, see expected vs. actual values side-by-side
+- **Error Context**: Full error messages with all details from Mocha
+
+Click on any stack trace line to jump directly to that location in your code.
 
 ### Manual Refresh
 
