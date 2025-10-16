@@ -19,6 +19,10 @@ interface MochaConfig {
   grep?: string;
   slow: number;
   bail: boolean;
+  retries?: number;
+  require?: string[];
+  ignore?: string[];
+  extensions?: string[];
 }
 
 export class TestRunner {
@@ -26,6 +30,7 @@ export class TestRunner {
     timeout: 5000,
     slow: 75,
     bail: false,
+    extensions: ['js', 'ts'],
   };
 
   constructor(
@@ -234,6 +239,7 @@ export class TestRunner {
    * - src/foo.ts -> src/foo.test.ts, src/foo.spec.ts
    * - src/foo.ts -> test/foo.test.ts, __tests__/foo.test.ts
    * - lib/bar.js -> lib/bar.spec.js, test/bar.spec.js
+   * Respects configured extensions for test file discovery.
    */
   private async findTestFilesForSource(sourceUri: vscode.Uri): Promise<vscode.Uri[]> {
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(sourceUri);
@@ -245,30 +251,36 @@ export class TestRunner {
     const parsedPath = path.parse(relativePath);
     const dir = parsedPath.dir;
     const nameWithoutExt = parsedPath.name;
-    const ext = parsedPath.ext;
 
-    // Generate possible test file patterns
+    // Get configured extensions
+    const extensions = this.config.extensions || ['js', 'ts'];
+
+    // Generate possible test file patterns for all configured extensions
     const patterns: string[] = [];
     
-    // Same directory patterns
-    patterns.push(path.join(dir, `${nameWithoutExt}.test${ext}`));
-    patterns.push(path.join(dir, `${nameWithoutExt}.spec${ext}`));
-    
-    // Common test directory patterns
-    const testDirs = ['test', 'tests', '__tests__', 'spec', 'specs'];
-    for (const testDir of testDirs) {
-      patterns.push(path.join(testDir, dir, `${nameWithoutExt}.test${ext}`));
-      patterns.push(path.join(testDir, dir, `${nameWithoutExt}.spec${ext}`));
-      patterns.push(path.join(testDir, `${nameWithoutExt}.test${ext}`));
-      patterns.push(path.join(testDir, `${nameWithoutExt}.spec${ext}`));
-    }
-
-    // If source is in src/, also try without src/ prefix
-    if (dir.startsWith('src/') || dir.startsWith('src\\')) {
-      const dirWithoutSrc = dir.substring(4);
+    for (const ext of extensions) {
+      const testExt = `.${ext}`;
+      
+      // Same directory patterns
+      patterns.push(path.join(dir, `${nameWithoutExt}.test${testExt}`));
+      patterns.push(path.join(dir, `${nameWithoutExt}.spec${testExt}`));
+      
+      // Common test directory patterns
+      const testDirs = ['test', 'tests', '__tests__', 'spec', 'specs'];
       for (const testDir of testDirs) {
-        patterns.push(path.join(testDir, dirWithoutSrc, `${nameWithoutExt}.test${ext}`));
-        patterns.push(path.join(testDir, dirWithoutSrc, `${nameWithoutExt}.spec${ext}`));
+        patterns.push(path.join(testDir, dir, `${nameWithoutExt}.test${testExt}`));
+        patterns.push(path.join(testDir, dir, `${nameWithoutExt}.spec${testExt}`));
+        patterns.push(path.join(testDir, `${nameWithoutExt}.test${testExt}`));
+        patterns.push(path.join(testDir, `${nameWithoutExt}.spec${testExt}`));
+      }
+
+      // If source is in src/, also try without src/ prefix
+      if (dir.startsWith('src/') || dir.startsWith('src\\')) {
+        const dirWithoutSrc = dir.substring(4);
+        for (const testDir of testDirs) {
+          patterns.push(path.join(testDir, dirWithoutSrc, `${nameWithoutExt}.test${testExt}`));
+          patterns.push(path.join(testDir, dirWithoutSrc, `${nameWithoutExt}.spec${testExt}`));
+        }
       }
     }
 
@@ -304,10 +316,15 @@ export class TestRunner {
 
     // File change handler with debouncing
     const handleFileChange = async (uri: vscode.Uri) => {
-      const isTestFile = uri.path.endsWith('.test.ts') || 
-                         uri.path.endsWith('.spec.ts') || 
-                         uri.path.endsWith('.test.js') || 
-                         uri.path.endsWith('.spec.js');
+      // Check if it's a test file using configured extensions
+      const extensions = this.config.extensions || ['js', 'ts'];
+      let isTestFile = false;
+      for (const ext of extensions) {
+        if (uri.path.endsWith(`.test.${ext}`) || uri.path.endsWith(`.spec.${ext}`)) {
+          isTestFile = true;
+          break;
+        }
+      }
 
       let testFilesToRun: vscode.Uri[] = [];
 
@@ -317,8 +334,8 @@ export class TestRunner {
         this.outputChannel.appendLine(`📝 Test file changed: ${uri.fsPath}`);
       } else {
         // Source file change - find corresponding test files
-        const ext = path.extname(uri.path);
-        const isSourceFile = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(ext);
+        const pathExt = path.extname(uri.path).substring(1); // Remove leading dot
+        const isSourceFile = extensions.includes(pathExt);
         
         if (!isSourceFile) {
           return; // Ignore non-source files (config, markdown, etc.)
@@ -922,6 +939,18 @@ export class TestRunner {
     if (this.config.bail) {
       baseArgs.push('--bail');
     }
+    
+    // Add retries if configured
+    if (this.config.retries !== undefined && this.config.retries > 0) {
+      baseArgs.push('--retries', this.config.retries.toString());
+    }
+    
+    // Add require modules if configured
+    if (this.config.require && this.config.require.length > 0) {
+      this.config.require.forEach(module => {
+        baseArgs.push('--require', module);
+      });
+    }
 
     const jsonArgs = [
       ...baseArgs,
@@ -1150,6 +1179,18 @@ export class TestRunner {
     // Add bail if configured
     if (this.config.bail) {
       args.push('--bail');
+    }
+    
+    // Add retries if configured
+    if (this.config.retries !== undefined && this.config.retries > 0) {
+      args.push('--retries', this.config.retries.toString());
+    }
+    
+    // Add require modules if configured
+    if (this.config.require && this.config.require.length > 0) {
+      this.config.require.forEach(module => {
+        args.push('--require', module);
+      });
     }
 
     const startTime = Date.now();

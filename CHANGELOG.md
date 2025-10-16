@@ -2,6 +2,125 @@
 
 All notable changes to the "Mocha Test Adapter" extension will be documented in this file.
 
+## [0.0.11] - 2025-01-XX
+
+### Removed
+- **UI Configuration Handler**: Removed "Configure Test Profiles" menu and configuration dialogs
+  - Configuration files are now the **only** way to configure Mocha options
+  - Eliminates confusion about which settings apply (UI vs file)
+  - Follows professional tool patterns (Jest, ESLint, Prettier all use config files)
+  - Deleted `showConfigurationDialog()` method (~65 lines)
+  - Removed `configureHandler` from all 6 test profiles (run, debug, unit, integration, e2e, coverage)
+
+### Added
+- **`retries` Configuration**: Retry failed tests N times before marking as failure
+  - Useful for handling flaky tests during development
+  - Passed to Mocha via `--retries` flag when > 0
+  - Applied in both run and debug modes
+  - Example: `retries: 2` in `.mocharc.js`
+- **`require` Configuration**: Full implementation for loading modules before tests
+  - Load transpilers like `ts-node/register`, `@babel/register`
+  - Load global setup files, assertion libraries, test utilities
+  - Each module passed via separate `--require` flag to Mocha
+  - Applied in both run and debug modes
+  - Example: `require: ['ts-node/register', 'test/setup.js']`
+- **`ignore` Configuration**: Exclude files from test discovery
+  - Glob patterns to exclude helper files, fixtures, non-test files
+  - Patterns added to VS Code's `findFiles()` exclude parameter
+  - Combined with default `**/node_modules/**` exclusion
+  - Example: `ignore: ['**/*.helper.js', '**/fixtures/**']`
+
+### Changed
+- **Documentation Reorganization**: Updated CONFIGURATION.md with property relevance categories
+  - **Highly Relevant (8 properties)**: Fully implemented - timeout, slow, bail, grep, extension, retries, require, ignore
+  - **Somewhat Relevant (9 properties)**: Documented as work-in-progress for future implementation
+  - **Not Relevant (14 properties)**: Documented why they're intentionally skipped (conflict with VS Code or redundant)
+  - Clear rationale for each category explaining VS Code Test Explorer integration
+- **README.md**: Updated configuration documentation to reflect file-only configuration approach
+
+### Technical Details
+- Updated `MochaConfig` interface in all 3 modules (mochaTestController, testRunner, coverageProvider)
+- Added retries, require, ignore properties with proper types
+- Config loading in `loadMochaConfig()` normalizes arrays (string|string[] → string[])
+- Test runner builds Mocha arguments with new flags in both `runFileTests()` and `debugTests()`
+- Test discovery filters files using ignore patterns in `discoverAllTests()` method
+- Comprehensive logging when config properties are loaded
+
+## [0.0.10] - 2025-10-16
+
+### Added
+- **Extension Configuration Respect**: All test-related operations now respect the `extension` config option
+  - File watchers use configured extensions (e.g., `['js', 'ts', 'mjs', 'cjs']`)
+  - Test discovery patterns generated dynamically based on config
+  - Continuous run mode detects test files using configured extensions
+  - Source-to-test file mapping searches across all configured extensions
+  - Coverage exclusions apply to all configured test file extensions
+  - Defaults to `['js', 'ts']` matching Mocha's defaults
+  - Example: Set `extension: ['mjs', 'cjs']` in `.mocharc.js` to work with ES modules
+
+### Technical Details
+- Added `extensions` field to `MochaConfig` interfaces across all modules
+- Created `getTestFilePatterns()` method to generate dynamic glob patterns like `**/*.test.{ts,js}`
+- Created `isTestFileUri()` method for URI validation against configured extensions
+- Updated `setupFileWatchers()` to use dynamic patterns
+- Updated `discoverAllTests()` to use dynamic patterns
+- Updated continuous run mode file detection in `handleFileChange()`
+- Updated `findTestFilesForSource()` to search for test files in all configured extensions
+- Updated coverage provider to generate dynamic exclusion patterns
+- Extensions normalized by removing leading dots (`.ts` → `ts`)
+- Logging added when extensions are loaded from config
+
+## [0.0.9] - 2025-10-16
+
+### Added
+- **Configuration File Support**: Automatically loads Mocha configuration from workspace files
+  - Supports `.mocharc.js`, `.mocharc.cjs` (JavaScript with function support)
+  - Supports `.mocharc.json`, `.mocharc.jsonc` (JSON with comments)
+  - Supports `.mocharc.yaml`, `.mocharc.yml` (YAML - requires `yaml` or `js-yaml` package)
+  - Supports `package.json` with `"mocha"` property
+  - Priority order follows Mocha's official spec
+  - Loaded at startup and applied to all test runs
+  - **Complete option support**: All Mocha CLI options are supported including:
+    - Test behavior: `timeout`, `slow`, `bail`, `retries`, `allowUncaught`, `asyncOnly`, `checkLeaks`, `forbidOnly`, `forbidPending`, etc.
+    - File handling: `require`, `extension`, `ignore`, `recursive`, `watch`, `watchFiles`, `watchIgnore`, etc.
+    - Test filtering: `grep`, `fgrep`, `invert`
+    - Parallel execution: `parallel`, `jobs`
+    - Reporting: `reporter`, `inlineDiffs`, `color`, `diff`, `fullTrace`, `reporterOptions`, etc.
+    - Interface: `ui`
+    - And many more standard Mocha options
+  - Smart type handling: Converts string timeouts (e.g., "5s") to milliseconds, RegExp to string for grep
+  - UI configuration still available for session-specific overrides
+
+### Technical Details
+- Created `ConfigLoader` class to handle all config file formats
+- Complete `MochaConfigFile` interface with all Mocha options
+- Loads config during `initialize()` before test discovery
+- Merges config with defaults, respecting option priorities
+- Uses dynamic import for ESM/CJS compatibility with `.mocharc.js` files
+- JSONC support via comment stripping
+- YAML support if parser available in workspace
+- `parseTimeout()` helper converts string timeouts to numbers
+- Type-safe handling of RegExp grep patterns
+- Updates runner and coverage provider with loaded settings
+
+## [0.0.8] - 2025-10-16
+
+### Added
+- **Context Menu Actions**: Right-click on any test for quick actions
+  - **Go to Test**: Navigate directly to test code location (also available via ⌘+Click)
+  - **Copy Test Name**: Copy full hierarchical test name to clipboard
+  - **Run Only This Test**: Run just this specific test in isolation using grep
+  - **Reveal in Explorer**: Show test file in VS Code file explorer
+  - Commands appear in context menu with appropriate icons
+  - Helpful for navigating large test suites and debugging specific tests
+
+### Technical Details
+- Registered four new commands in package.json with menu contributions
+- `getFullTestName()` helper builds hierarchical test paths
+- `runTestWithGrep()` temporarily sets grep pattern for isolated test execution
+- Uses VS Code icons: `go-to-file`, `clippy`, `play`, `file-directory`
+- Commands integrate seamlessly with native Testing API context menus
+
 ## [0.0.7] - 2025-10-16
 
 ### Added

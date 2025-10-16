@@ -14,6 +14,10 @@ interface MochaConfig {
   grep?: string;
   slow: number;
   bail: boolean;
+  retries?: number;
+  require?: string[];
+  ignore?: string[];
+  extensions?: string[]; // e.g., ['js', 'ts', 'mjs']
 }
 
 export class CoverageProvider {
@@ -119,6 +123,9 @@ export class CoverageProvider {
 
       // Build c8 command arguments
       // c8 needs to wrap 'node' execution, so we tell it to run: node <mocha> <test-file>
+      const extensions = this.config.extensions || ['js', 'ts'];
+      const extPattern = extensions.length === 1 ? extensions[0] : `{${extensions.join(',')}}`;
+      
       const c8Args = [
         ...nodeArgs,
         c8Path,
@@ -126,8 +133,8 @@ export class CoverageProvider {
         '--reporter=text',
         `--reports-dir=${coverageDir}`,
         '--all',
-        '--exclude=**/*.test.{js,ts}',
-        '--exclude=**/*.spec.{js,ts}',
+        `--exclude=**/*.test.${extPattern}`,
+        `--exclude=**/*.spec.${extPattern}`,
         '--exclude=**/node_modules/**',
         '--exclude=.*', // Ignore all hidden folders and e.g. .mocharc.js, .pnp* etc
         'node',  // c8 wraps node execution

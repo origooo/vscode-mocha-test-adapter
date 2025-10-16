@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { TestDiscovery } from './testDiscovery.js';
 import { TestRunner } from './testRunner.js';
 import { CoverageProvider } from './coverageProvider.js';
+import { ConfigLoader } from './configLoader.js';
 
 enum ItemType {
   File,
@@ -19,6 +20,10 @@ interface MochaConfig {
   grep?: string;
   slow: number;
   bail: boolean;
+  retries?: number; // Number of times to retry failed tests
+  require?: string[]; // Modules to require before running tests
+  ignore?: string[]; // Patterns to ignore during test discovery
+  extensions?: string[]; // Test file extensions (e.g., ['ts', 'js', 'mjs'])
 }
 
 export class MochaTestController {
@@ -27,11 +32,13 @@ export class MochaTestController {
   private readonly discovery: TestDiscovery;
   private readonly runner: TestRunner;
   private readonly coverage: CoverageProvider;
+  private readonly configLoader: ConfigLoader;
   private fileWatchers: vscode.FileSystemWatcher[] = [];
   private config: MochaConfig = {
     timeout: 5000,
     slow: 75,
     bail: false,
+    extensions: ['js', 'ts'], // Default Mocha extensions
   };
 
   constructor(
@@ -46,6 +53,10 @@ export class MochaTestController {
       'Mocha Tests'
     );
     this.outputChannel.appendLine('✓ Test controller created');
+
+    this.outputChannel.appendLine('Initializing config loader...');
+    this.configLoader = new ConfigLoader(outputChannel);
+    this.outputChannel.appendLine('✓ Config loader initialized');
 
     this.outputChannel.appendLine('Initializing coverage provider...');
     this.coverage = new CoverageProvider(this.outputChannel);
@@ -98,11 +109,6 @@ export class MochaTestController {
       undefined,
       true // Enable continuous run support
     );
-    
-    // Add configure handler for run profile
-    runProfile.configureHandler = () => {
-      this.showConfigurationDialog();
-    };
 
     // Create a debug profile for debugging tests
     const debugProfile = this.controller.createRunProfile(
@@ -115,11 +121,6 @@ export class MochaTestController {
       undefined,
       false
     );
-    
-    // Add configure handler for debug profile
-    debugProfile.configureHandler = () => {
-      this.showConfigurationDialog();
-    };
 
     // Create a coverage profile for running tests with coverage
     const coverageProfile = this.controller.createRunProfile(
@@ -175,24 +176,6 @@ export class MochaTestController {
       false // Disable continuous run for e2e (too slow)
     );
     
-    // Add configure handlers to tag-specific profiles too
-    unitProfile.configureHandler = () => {
-      this.showConfigurationDialog();
-    };
-    
-    integrationProfile.configureHandler = () => {
-      this.showConfigurationDialog();
-    };
-    
-    e2eProfile.configureHandler = () => {
-      this.showConfigurationDialog();
-    };
-    
-    // Add configure handler to coverage profile
-    coverageProfile.configureHandler = () => {
-      this.showConfigurationDialog();
-    };
-
     this.context.subscriptions.push(
       runProfile, 
       debugProfile, 
@@ -204,6 +187,10 @@ export class MochaTestController {
   }
 
   async initialize() {
+    this.outputChannel.appendLine('Loading Mocha configuration...');
+    await this.loadMochaConfig();
+    this.outputChannel.appendLine('✓ Configuration loaded');
+
     this.outputChannel.appendLine('Setting up file watchers...');
     // Watch for test file changes
     await this.setupFileWatchers();
@@ -236,6 +223,124 @@ export class MochaTestController {
     this.outputChannel.appendLine('✓ Document event handlers registered');
   }
 
+  private async loadMochaConfig() {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+      this.outputChannel.appendLine('  No workspace folders to load config from');
+      return;
+    }
+
+    // Load config from first workspace folder
+    const workspaceFolder = workspaceFolders[0];
+    const loadedConfig = await this.configLoader.loadConfig(workspaceFolder);
+
+    if (loadedConfig) {
+      // Merge loaded config with defaults
+      if (loadedConfig.timeout !== undefined) {
+        // Convert string timeout (e.g., "2s") to number (milliseconds)
+        this.config.timeout = typeof loadedConfig.timeout === 'string' 
+          ? this.parseTimeout(loadedConfig.timeout) 
+          : loadedConfig.timeout;
+        this.outputChannel.appendLine(`  timeout: ${this.config.timeout}ms`);
+      }
+      if (loadedConfig.slow !== undefined) {
+        this.config.slow = loadedConfig.slow;
+        this.outputChannel.appendLine(`  slow: ${this.config.slow}ms`);
+      }
+      if (loadedConfig.bail !== undefined) {
+        this.config.bail = loadedConfig.bail;
+        this.outputChannel.appendLine(`  bail: ${this.config.bail}`);
+      }
+      if (loadedConfig.grep !== undefined) {
+        // Convert RegExp to string for consistency
+        this.config.grep = loadedConfig.grep instanceof RegExp 
+          ? loadedConfig.grep.source 
+          : loadedConfig.grep;
+        this.outputChannel.appendLine(`  grep: ${this.config.grep}`);
+      }
+      if (loadedConfig.extension !== undefined) {
+        // Convert to array and normalize extensions (remove leading dots)
+        const extensions = Array.isArray(loadedConfig.extension) 
+          ? loadedConfig.extension 
+          : [loadedConfig.extension];
+        
+        this.config.extensions = extensions.map(ext => ext.replace(/^\./, ''));
+        this.outputChannel.appendLine(`  extensions: ${this.config.extensions.join(', ')}`);
+        
+        // Extensions changed - need to re-setup file watchers
+        this.outputChannel.appendLine('  ⚠️  Extensions changed - file watchers will be updated');
+      }
+      if (loadedConfig.retries !== undefined) {
+        this.config.retries = loadedConfig.retries;
+        this.outputChannel.appendLine(`  retries: ${this.config.retries}`);
+      }
+      if (loadedConfig.require !== undefined) {
+        // Convert to array if single string
+        this.config.require = Array.isArray(loadedConfig.require) 
+          ? loadedConfig.require 
+          : [loadedConfig.require];
+        this.outputChannel.appendLine(`  require: ${this.config.require.join(', ')}`);
+      }
+      if (loadedConfig.ignore !== undefined) {
+        // Convert to array if single string
+        this.config.ignore = Array.isArray(loadedConfig.ignore) 
+          ? loadedConfig.ignore 
+          : [loadedConfig.ignore];
+        this.outputChannel.appendLine(`  ignore: ${this.config.ignore.join(', ')}`);
+      }
+
+      // Update runner and coverage provider with loaded config
+      this.runner.updateConfig(this.config);
+      this.coverage.updateConfig(this.config);
+      this.outputChannel.appendLine('  Configuration applied to runner and coverage provider');
+    }
+  }
+
+  /**
+   * Parse timeout string (e.g., "2s", "5000") to milliseconds
+   */
+  private parseTimeout(timeout: string): number {
+    const match = timeout.match(/^(\d+)(s|ms)?$/);
+    if (!match) {
+      this.outputChannel.appendLine(`  ⚠️  Invalid timeout format: ${timeout}, using default`);
+      return 5000;
+    }
+    
+    const value = parseInt(match[1], 10);
+    const unit = match[2] || 'ms';
+    
+    return unit === 's' ? value * 1000 : value;
+  }
+
+  /**
+   * Get test file glob patterns based on configured extensions
+   * Returns patterns like ['**\/*.test.{ts,js}', '**\/*.spec.{ts,js}']
+   */
+  private getTestFilePatterns(): string[] {
+    const extensions = this.config.extensions || ['js', 'ts'];
+    const extPattern = extensions.length === 1 ? extensions[0] : `{${extensions.join(',')}}`;
+    
+    return [
+      `**/*.test.${extPattern}`,
+      `**/*.spec.${extPattern}`
+    ];
+  }
+
+  /**
+   * Check if a URI is a test file based on configured extensions
+   */
+  private isTestFileUri(uri: vscode.Uri): boolean {
+    const extensions = this.config.extensions || ['js', 'ts'];
+    
+    for (const ext of extensions) {
+      if (uri.path.endsWith(`.test.${ext}`) || uri.path.endsWith(`.spec.${ext}`)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
   private async setupFileWatchers() {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
@@ -249,8 +354,9 @@ export class MochaTestController {
 
     for (const folder of workspaceFolders) {
       this.outputChannel.appendLine(`  Setting up watchers for: ${folder.uri.fsPath}`);
-      // Watch for .test.ts, .spec.ts, .test.js, .spec.js files
-      const patterns = ['**/*.test.{ts,js}', '**/*.spec.{ts,js}'];
+      // Watch for test files based on configured extensions
+      const patterns = this.getTestFilePatterns();
+      this.outputChannel.appendLine(`  Watching patterns: ${patterns.join(', ')}`);
 
       for (const pattern of patterns) {
         const relativePattern = new vscode.RelativePattern(folder, pattern);
@@ -287,15 +393,25 @@ export class MochaTestController {
 
     let totalFiles = 0;
 
+    // Build exclude patterns: always exclude node_modules, plus any configured ignore patterns
+    const excludePatterns = ['{**/node_modules/**'];
+    if (this.config.ignore && this.config.ignore.length > 0) {
+      this.outputChannel.appendLine(`  Ignore patterns: ${this.config.ignore.join(', ')}`);
+      excludePatterns.push(...this.config.ignore.map(p => p));
+    }
+    const excludePattern = excludePatterns.length === 1 
+      ? excludePatterns[0].slice(1) // Remove leading '{'
+      : excludePatterns.join(',') + '}';
+
     for (const folder of workspaceFolders) {
       this.outputChannel.appendLine(`  Scanning folder: ${folder.uri.fsPath}`);
-      const patterns = ['**/*.test.{ts,js}', '**/*.spec.{ts,js}'];
+      const patterns = this.getTestFilePatterns();
 
       for (const pattern of patterns) {
         this.outputChannel.appendLine(`    Pattern: ${pattern}`);
         const files = await vscode.workspace.findFiles(
           new vscode.RelativePattern(folder, pattern),
-          '**/node_modules/**'
+          excludePattern
         );
 
         this.outputChannel.appendLine(`    Found ${files.length} file(s)`);
@@ -311,14 +427,7 @@ export class MochaTestController {
   }
 
   private isTestFile(document: vscode.TextDocument): boolean {
-    const uri = document.uri;
-    return (
-      uri.scheme === 'file' &&
-      (uri.path.endsWith('.test.ts') ||
-        uri.path.endsWith('.spec.ts') ||
-        uri.path.endsWith('.test.js') ||
-        uri.path.endsWith('.spec.js'))
-    );
+    return document.uri.scheme === 'file' && this.isTestFileUri(document.uri);
   }
 
   async refresh() {
@@ -326,68 +435,42 @@ export class MochaTestController {
     await this.discoverAllTests();
   }
 
-  private async showConfigurationDialog(): Promise<void> {
-    // Show timeout configuration
-    const timeoutInput = await vscode.window.showInputBox({
-      prompt: 'Test timeout (milliseconds)',
-      value: this.config.timeout.toString(),
-      validateInput: (value) => {
-        const num = parseInt(value, 10);
-        return isNaN(num) || num < 0 ? 'Must be a positive number' : null;
-      },
-    });
-
-    if (timeoutInput !== undefined) {
-      this.config.timeout = parseInt(timeoutInput, 10);
-    }
-
-    // Show grep pattern configuration
-    const grepInput = await vscode.window.showInputBox({
-      prompt: 'Grep pattern (filter tests by name, leave empty for all)',
-      value: this.config.grep || '',
-      placeHolder: 'e.g., "should work" or "/pattern/"',
-    });
-
-    if (grepInput !== undefined) {
-      this.config.grep = grepInput || undefined;
-    }
-
-    // Show slow threshold configuration
-    const slowInput = await vscode.window.showInputBox({
-      prompt: 'Slow test threshold (milliseconds)',
-      value: this.config.slow.toString(),
-      validateInput: (value) => {
-        const num = parseInt(value, 10);
-        return isNaN(num) || num < 0 ? 'Must be a positive number' : null;
-      },
-    });
-
-    if (slowInput !== undefined) {
-      this.config.slow = parseInt(slowInput, 10);
-    }
-
-    // Show bail configuration
-    const bailOptions = ['No', 'Yes'];
-    const bailChoice = await vscode.window.showQuickPick(bailOptions, {
-      placeHolder: 'Bail after first test failure?',
-    });
-
-    if (bailChoice !== undefined) {
-      this.config.bail = bailChoice === 'Yes';
-    }
-
-    // Update the runner and coverage provider with new config
-    this.runner.updateConfig(this.config);
-    this.coverage.updateConfig(this.config);
-
-    // Show confirmation
-    vscode.window.showInformationMessage(
-      `Mocha configuration updated: timeout=${this.config.timeout}ms, slow=${this.config.slow}ms, bail=${this.config.bail}${this.config.grep ? `, grep="${this.config.grep}"` : ''}`
-    );
-  }
-
   getConfig(): MochaConfig {
     return this.config;
+  }
+
+  /**
+   * Run a specific test using grep pattern
+   */
+  async runTestWithGrep(testItem: vscode.TestItem, grepPattern: string): Promise<void> {
+    this.outputChannel.appendLine(`Running test with grep pattern: ${grepPattern}`);
+    
+    // Store the current grep setting
+    const originalGrep = this.config.grep;
+    
+    try {
+      // Temporarily set the grep pattern
+      this.config.grep = grepPattern;
+      this.runner.updateConfig(this.config);
+      this.coverage.updateConfig(this.config);
+      
+      // Find the root test item (file level)
+      let rootItem = testItem;
+      while (rootItem.parent) {
+        rootItem = rootItem.parent;
+      }
+      
+      // Create a test run request for this test
+      const request = new vscode.TestRunRequest([rootItem]);
+      
+      // Run the test with the default profile
+      await this.runner.runTests(request, new vscode.CancellationTokenSource().token);
+    } finally {
+      // Restore the original grep setting
+      this.config.grep = originalGrep;
+      this.runner.updateConfig(this.config);
+      this.coverage.updateConfig(this.config);
+    }
   }
 
   dispose() {

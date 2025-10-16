@@ -2,7 +2,7 @@
   "name": "copilot-mocha-extension",
   "displayName": "Mocha Test Adapter",
   "description": "Mocha test adapter for VS Code using the native Testing API",
-  "version": "0.0.7",
+  "version": "0.0.10",
   "publisher": "your-publisher-name",
   "license": "MIT",
   "type": "module",
@@ -24,8 +24,56 @@
         "command": "mocha-extension.refreshTests",
         "title": "Refresh Tests",
         "category": "Mocha"
+      },
+      {
+        "command": "mocha-extension.goToTest",
+        "title": "Go to Test",
+        "category": "Mocha",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "mocha-extension.copyTestName",
+        "title": "Copy Test Name",
+        "category": "Mocha",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "mocha-extension.runTestWithGrep",
+        "title": "Run Only This Test",
+        "category": "Mocha",
+        "icon": "$(play)"
+      },
+      {
+        "command": "mocha-extension.revealInExplorer",
+        "title": "Reveal in Explorer",
+        "category": "Mocha",
+        "icon": "$(file-directory)"
       }
-    ]
+    ],
+    "menus": {
+      "testing/item/context": [
+        {
+          "command": "mocha-extension.goToTest",
+          "when": "testId",
+          "group": "inline@1"
+        },
+        {
+          "command": "mocha-extension.copyTestName",
+          "when": "testId",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mocha-extension.runTestWithGrep",
+          "when": "testId",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mocha-extension.revealInExplorer",
+          "when": "testId",
+          "group": "navigation@3"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "yarn run compile",

@@ -7,13 +7,15 @@ A VS Code extension that provides Mocha test integration using the native Testin
 - **Automatic Test Discovery**: Finds `.test.ts`, `.spec.ts`, `.test.js`, and `.spec.js` files automatically
 - **Native Testing UI**: Uses VS Code's built-in Testing API (not the old Test Explorer)
 - **Run Individual Tests**: Execute single tests, test suites, or entire files
+- **Context Menu Actions**: Right-click tests for quick actions (Go to Test, Copy Name, Run Only This, etc.)
 - **Debug Support**: Full debugging with breakpoints and source maps
 - **Code Coverage**: Built-in coverage support with detailed statement and branch coverage
 - **Test Output**: Captures and displays console.log() and test output in Test Results view
 - **Enhanced Error Messages**: Shows stack traces with clickable file links and diffs for assertion failures
 - **Test Tags**: Organize and filter tests by tags (unit, integration, e2e, etc.)
-- **Configurable Test Options**: Configure Mocha timeout, grep patterns, slow threshold, and bail via UI
-- **Continuous Run Mode**: Auto-run tests on save with smart performance optimizations
+- **Configuration File Support**: Automatically loads `.mocharc.js`, `.mocharc.json`, `.mocharc.yaml`, or `package.json` config
+- **UI Configuration**: Configure Mocha timeout, grep patterns, slow threshold, and bail via UI dialogs
+- **Continuous Run Mode**: Auto-run tests on save with smart source-to-test file mapping
 - **Real-time Updates**: Watches for file changes and updates tests automatically
 - **Nested Suites**: Properly handles nested `describe` blocks
 - **TypeScript & JavaScript**: Supports both TS and JS test files
@@ -53,6 +55,17 @@ The extension will automatically discover these dependencies in your workspace.
 - **File tests**: Click play next to a test file
 - **Suite tests**: Click play next to a `describe` block  
 - **Single test**: Click play next to an `it` block
+
+### Context Menu Actions
+
+Right-click on any test in the Testing view for quick actions:
+
+- **Go to Test** (⌘+Click or right-click): Navigate directly to the test's code location
+- **Copy Test Name**: Copy the full hierarchical test name to clipboard (e.g., "Suite > Nested Suite > Test Name")
+- **Run Only This Test**: Run just this specific test in isolation using grep
+- **Reveal in Explorer**: Show the test file in the VS Code file explorer
+
+These actions make it easy to navigate, isolate, and debug specific tests without running the entire suite.
 
 ### Debugging Tests
 
@@ -164,7 +177,137 @@ Enable **auto-run on save** for instant feedback during TDD:
 
 ### Configuring Test Options
 
-To configure Mocha options:
+You have two ways to configure Mocha options:
+
+#### Option 1: Configuration Files (Recommended)
+
+Create a Mocha configuration file in your project root. The extension automatically loads configuration from:
+
+- `.mocharc.js` or `.mocharc.cjs` (JavaScript - can export a function)
+- `.mocharc.json` or `.mocharc.jsonc` (JSON with comments support)
+- `.mocharc.yaml` or `.mocharc.yml` (YAML - requires `yaml` or `js-yaml` package)
+- `package.json` (add a `"mocha"` property)
+
+**Example `.mocharc.js`:**
+```javascript
+module.exports = {
+  // Test behavior
+  timeout: '5s',          // Can be number (ms) or string ('5s')
+  slow: 100,
+  bail: false,
+  retries: 2,
+  allowUncaught: false,
+  asyncOnly: false,
+  checkLeaks: false,
+  forbidOnly: false,
+  forbidPending: false,
+  
+  // File handling
+  require: ['@babel/register'],
+  extension: ['ts', 'tsx'],
+  recursive: true,
+  ignore: ['**/.git/**', '**/node_modules/**'],
+  
+  // Test filtering  
+  grep: 'should',         // String or RegExp
+  fgrep: 'API',          // Fixed string match
+  invert: false,
+  
+  // Parallel execution
+  parallel: false,
+  jobs: 4,
+  
+  // Reporting
+  reporter: 'spec',
+  inlineDiffs: true,
+  color: true,
+  diff: true
+};
+```
+
+**Example `.mocharc.json`:**
+```json
+{
+  "timeout": 10000,
+  "slow": 100,
+  "bail": false,
+  "reporter": "spec",
+  "inlineDiffs": true,
+  "retries": 2,
+  "require": ["@babel/register"],
+  "extension": ["ts", "tsx"]
+}
+```
+
+**Example `package.json`:**
+```json
+{
+  "mocha": {
+    "timeout": "10s",
+    "slow": 100,
+    "inlineDiffs": true
+  }
+}
+```
+
+**Configuration Priority:**
+1. Command-line arguments (not applicable in VS Code context)
+2. `.mocharc.js` → `.mocharc.cjs` → `.mocharc.yaml` → `.mocharc.yml` → `.mocharc.jsonc` → `.mocharc.json` → `package.json`
+3. Extension defaults
+
+#### Respected Configuration Properties
+
+The extension respects the following Mocha configuration options. Configuration files are the **only** way to configure the extension (no UI-based configuration).
+
+**✅ Fully Implemented (8 properties):**
+- **`timeout`** (number | string): Test timeout in milliseconds. Supports strings like "5s". *(Default: 5000)*
+- **`slow`** (number): Threshold for marking tests as slow in milliseconds. *(Default: 75)*
+- **`bail`** (boolean): Stop test execution after first failure. *(Default: false)*
+- **`grep`** (string | RegExp): Only run tests matching pattern. Converted to string if RegExp. *(Default: undefined)*
+- **`extension`** (string[]): File extensions to consider as test files (e.g., `['ts', 'mjs', 'cjs']`). *(Default: ['js', 'ts'])*
+- **`retries`** (number): Number of times to retry failed tests. Useful for flaky tests. *(Default: 0)*
+- **`require`** (string[]): Modules to load before running tests (e.g., `['ts-node/register']`). *(Default: [])*
+- **`ignore`** (string[]): Glob patterns to exclude from test discovery (e.g., `['**/*.helper.js']`). *(Default: [])*
+
+**🚧 Work In Progress (9 properties):**
+- **`fgrep`** (string): Fixed string match for test filtering (simpler than regex)
+- **`invert`** (boolean): Invert grep/fgrep matches (exclude tests instead of include)
+- **`forbidOnly`** (boolean): Fail if `.only()` tests found (CI validation)
+- **`forbidPending`** (boolean): Fail if pending/skipped tests found
+- **`checkLeaks`** (boolean): Check for global variable leaks between tests
+- **`allowUncaught`** (boolean): Allow uncaught exceptions to propagate (debugging)
+- **`asyncOnly`** (boolean): Require all tests to be async
+- **`file`** (string[]): Files to load before other test files (global setup)
+- **`nodeOption`** (string[]): Node.js command-line options (e.g., memory limits)
+
+**🚫 Not Applicable (14 properties):**
+These properties conflict with VS Code's Test Explorer or are redundant in an IDE context:
+- **`reporter`**, **`spec`**, **`watch`**, **`watchFiles`**, **`watchIgnore`**: VS Code Test Explorer provides these features
+- **`recursive`**: Extension always searches recursively
+- **`parallel`**, **`jobs`**: VS Code Test Explorer manages execution
+- **`ui`**: Extension only supports BDD interface (`describe`, `it`)
+- **`color`**, **`diff`**, **`inlineDiffs`**, **`fullTrace`**: VS Code handles output formatting
+- **`growl`**, **`delay`**, **`dryRun`**, **`failZero`**: Not relevant in IDE context
+- **`delay`** (boolean): Delay root suite execution
+- **`dryRun`** (boolean): Report tests without running
+- **`failZero`** (boolean): Fail if no tests found
+- **`nodeOption`** (string[]): Node.js options
+- **`package`** (string): Path to package.json
+- **`config`** (string | false): Path to config file or disable
+- **`spec`** (string[]): Test file patterns (extension discovers files automatically)
+
+**🔮 Future Implementation Priority:**
+1. **`retries`** - Useful for flaky tests, easy to implement in test runner
+2. **`fgrep` / `invert`** - Simple filtering additions to grep functionality  
+3. **`ignore`** - Filter out specific files from test discovery
+4. **`parallel`** - Significant performance improvement for large test suites
+5. **`inlineDiffs` / `diff` / `color`** - Better test output formatting
+6. **`reporter`** - Allow custom Mocha reporters (currently hardcoded to JSON)
+7. **`forbidOnly` / `forbidPending`** - CI-friendly test validation
+
+All configuration properties are loaded and stored by the extension, but only the "Fully Implemented" ones currently affect extension behavior. Properties marked "Not Yet Implemented" are available for future development.
+
+#### Option 2: VS Code UI Configuration
 
 1. Click the **dropdown arrow** next to "Run Tests" in the Testing view
 2. Select **"Configure Test Profiles..."** from the menu
@@ -175,7 +318,9 @@ To configure Mocha options:
    - **Slow Threshold**: Mark tests as slow above this duration (default: 75ms)
    - **Bail**: Stop after first test failure (useful for debugging)
 
-Configuration applies to all test runs until changed. Settings are remembered during your session.
+**Note:** UI configuration applies to the current session only. For persistent configuration, use a config file.
+
+Configuration file settings are loaded at startup and take precedence over defaults. UI configuration temporarily overrides both.
 
 ### Manual Refresh
 
@@ -253,8 +398,10 @@ Press F5 in VS Code to launch the extension in debug mode.
 ## Known Limitations
 
 - Test parsing is based on regex patterns (may not catch all edge cases)
-- Mocha configuration files (`.mocharc.json`) are not yet supported
-- Code coverage is not yet implemented
+- Only 5 Mocha configuration options are fully implemented (see Configuration section for details)
+- Parallel test execution not yet supported (parallel: true ignored)
+- Custom Mocha reporters not supported (extension uses JSON reporter internally)
+- Some configuration options like `ignore` patterns not yet applied during test discovery
 
 ## Contributing
 
