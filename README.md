@@ -10,7 +10,7 @@ A VS Code extension that provides Mocha test integration using the native Testin
 - **Context Menu Actions**: Right-click tests for quick actions (Go to Test, Copy Name, Run Only This, etc.)
 - **Debug Support**: Full debugging with breakpoints and source maps
 - **Code Coverage**: Built-in coverage support with detailed statement and branch coverage
-- **Test Output**: Captures and displays console.log() and test output in Test Results view
+- **Enhanced Test Output**: Color-coded results (✓ pass, ✗ fail), test durations, and summary statistics
 - **Enhanced Error Messages**: Shows stack traces with clickable file links and diffs for assertion failures
 - **Test Tags**: Organize and filter tests by tags (unit, integration, e2e, etc.)
 - **Configuration File Support**: Automatically loads `.mocharc.js`, `.mocharc.json`, `.mocharc.yaml`, or `package.json` config

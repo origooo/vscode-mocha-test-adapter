@@ -978,6 +978,11 @@ export class TestRunner {
     >();
 
     try {
+      // Add test run header
+      const testCount = this.countTests(fileItem);
+      const header = `\r\n${this.colors.bright}${this.colors.cyan}Running ${testCount} test${testCount !== 1 ? 's' : ''}...${this.colors.reset}\r\n`;
+      run.appendOutput(header);
+      
       // First, run with spec reporter for clean output display
       await new Promise<void>((resolve, reject) => {
         const child = spawn('node', specArgs, {
@@ -1096,6 +1101,15 @@ export class TestRunner {
       );
       this.updateTestResults(fileItem, run, testResults);
       this.outputChannel.appendLine('  ✓ Test results updated');
+      
+      // Add formatted summary to test output
+      const stats = this.calculateStats(testResults);
+      const summary = this.formatTestSummary(stats);
+      run.appendOutput(summary);
+      
+      this.outputChannel.appendLine(
+        `  Summary: ${stats.passed} passed, ${stats.failed} failed (${this.formatDuration(stats.duration)})`
+      );
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -1512,5 +1526,127 @@ export class TestRunner {
     }
 
     return parts.join(' ');
+  }
+
+  /**
+   * ANSI color codes for terminal output
+   */
+  private readonly colors = {
+    reset: '\x1b[0m',
+    bright: '\x1b[1m',
+    dim: '\x1b[2m',
+    
+    // Colors
+    green: '\x1b[32m',
+    red: '\x1b[31m',
+    yellow: '\x1b[33m',
+    cyan: '\x1b[36m',
+    gray: '\x1b[90m',
+    
+    // Background colors
+    bgGreen: '\x1b[42m',
+    bgRed: '\x1b[41m',
+    bgYellow: '\x1b[43m',
+  };
+
+  /**
+   * Format duration in human-readable format
+   */
+  private formatDuration(ms: number | undefined): string {
+    if (ms === undefined) return '';
+    
+    if (ms < 1) return '<1ms';
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    if (ms < 10000) return `${(ms / 1000).toFixed(2)}s`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  }
+
+  /**
+   * Create a formatted summary line with statistics
+   */
+  private formatTestSummary(stats: {
+    total: number;
+    passed: number;
+    failed: number;
+    skipped: number;
+    duration: number;
+  }): string {
+    const { total, passed, failed, skipped, duration } = stats;
+    
+    const parts: string[] = [];
+    
+    // Passed tests (green)
+    if (passed > 0) {
+      parts.push(`${this.colors.green}${passed} passing${this.colors.reset}`);
+    }
+    
+    // Failed tests (red)
+    if (failed > 0) {
+      parts.push(`${this.colors.red}${failed} failing${this.colors.reset}`);
+    }
+    
+    // Skipped tests (yellow)
+    if (skipped > 0) {
+      parts.push(`${this.colors.yellow}${skipped} skipped${this.colors.reset}`);
+    }
+    
+    // Total duration
+    const durationStr = this.formatDuration(duration);
+    
+    return `\r\n${this.colors.bright}Test Results:${this.colors.reset} ${parts.join(', ')} ${this.colors.dim}(${durationStr})${this.colors.reset}\r\n`;
+  }
+
+  /**
+   * Format a single test result line with colors
+   */
+  private formatTestResult(test: {
+    title: string;
+    passed: boolean;
+    duration?: number;
+    depth: number;
+  }): string {
+    const indent = '  '.repeat(test.depth);
+    const durationStr = test.duration ? ` ${this.colors.dim}(${this.formatDuration(test.duration)})${this.colors.reset}` : '';
+    
+    if (test.passed) {
+      return `${indent}${this.colors.green}✓${this.colors.reset} ${this.colors.dim}${test.title}${this.colors.reset}${durationStr}\r\n`;
+    } else {
+      return `${indent}${this.colors.red}✗${this.colors.reset} ${test.title}${durationStr}\r\n`;
+    }
+  }
+
+  /**
+   * Calculate test statistics from results
+   */
+  private calculateStats(results: Map<string, { 
+    passed: boolean; 
+    duration?: number;
+  }>): {
+    total: number;
+    passed: number;
+    failed: number;
+    skipped: number;
+    duration: number;
+  } {
+    let passed = 0;
+    let failed = 0;
+    let totalDuration = 0;
+    
+    for (const result of results.values()) {
+      if (result.passed) {
+        passed++;
+      } else {
+        failed++;
+      }
+      totalDuration += result.duration || 0;
+    }
+    
+    return {
+      total: results.size,
+      passed,
+      failed,
+      skipped: 0, // We'll implement skipped test detection later
+      duration: totalDuration,
+    };
   }
 }

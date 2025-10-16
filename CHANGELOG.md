@@ -35,6 +35,12 @@ All notable changes to the "Mocha Test Adapter" extension will be documented in 
   - Automatically rediscovers tests when config changes (e.g., new extensions, ignore patterns)
   - Reverts to defaults if config file is deleted
   - No extension reload needed!
+- **Enhanced Test Output**: Improved test run output with colors and statistics
+  - Color-coded test results: ✓ green for pass, ✗ red for fail
+  - Test duration display for individual tests (e.g., "15ms", "1.23s")
+  - Test run header showing total test count
+  - Summary statistics at end: "X passing, Y failing (total duration)"
+  - ANSI color support for better readability in Test Results panel
 
 ### Changed
 - **Documentation Reorganization**: Updated CONFIGURATION.md with property relevance categories
@@ -60,6 +66,8 @@ All notable changes to the "Mocha Test Adapter" extension will be documented in 
 - Comprehensive logging when config properties are loaded
 - Config file watchers created in `setupConfigFileWatcher()` with shared debounce timer
 - Import `createRequire` from `module` for proper CommonJS loading in ESM extension context
+- Added output formatting methods: `formatDuration()`, `formatTestSummary()`, `formatTestResult()`, `calculateStats()`
+- ANSI color codes defined for terminal output (green/red/yellow/cyan with reset/dim/bright modifiers)
 
 ## [0.0.10] - 2025-10-16
 
