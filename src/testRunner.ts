@@ -146,6 +146,11 @@ export class TestRunner {
     request: vscode.TestRunRequest,
     token: vscode.CancellationToken
   ): Promise<void> {
+    // Handle continuous run mode
+    if (request.continuous) {
+      return this.runContinuousTests(request, token);
+    }
+
     this.outputChannel.appendLine('');
     this.outputChannel.appendLine('='.repeat(60));
     this.outputChannel.appendLine('Starting test run...');
@@ -220,6 +225,243 @@ export class TestRunner {
     } finally {
       run.end();
       this.outputChannel.appendLine('='.repeat(60));
+    }
+  }
+
+  /**
+   * Find test files that correspond to a source file.
+   * Supports common naming patterns like:
+   * - src/foo.ts -> src/foo.test.ts, src/foo.spec.ts
+   * - src/foo.ts -> test/foo.test.ts, __tests__/foo.test.ts
+   * - lib/bar.js -> lib/bar.spec.js, test/bar.spec.js
+   */
+  private async findTestFilesForSource(sourceUri: vscode.Uri): Promise<vscode.Uri[]> {
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(sourceUri);
+    if (!workspaceFolder) {
+      return [];
+    }
+
+    const relativePath = vscode.workspace.asRelativePath(sourceUri);
+    const parsedPath = path.parse(relativePath);
+    const dir = parsedPath.dir;
+    const nameWithoutExt = parsedPath.name;
+    const ext = parsedPath.ext;
+
+    // Generate possible test file patterns
+    const patterns: string[] = [];
+    
+    // Same directory patterns
+    patterns.push(path.join(dir, `${nameWithoutExt}.test${ext}`));
+    patterns.push(path.join(dir, `${nameWithoutExt}.spec${ext}`));
+    
+    // Common test directory patterns
+    const testDirs = ['test', 'tests', '__tests__', 'spec', 'specs'];
+    for (const testDir of testDirs) {
+      patterns.push(path.join(testDir, dir, `${nameWithoutExt}.test${ext}`));
+      patterns.push(path.join(testDir, dir, `${nameWithoutExt}.spec${ext}`));
+      patterns.push(path.join(testDir, `${nameWithoutExt}.test${ext}`));
+      patterns.push(path.join(testDir, `${nameWithoutExt}.spec${ext}`));
+    }
+
+    // If source is in src/, also try without src/ prefix
+    if (dir.startsWith('src/') || dir.startsWith('src\\')) {
+      const dirWithoutSrc = dir.substring(4);
+      for (const testDir of testDirs) {
+        patterns.push(path.join(testDir, dirWithoutSrc, `${nameWithoutExt}.test${ext}`));
+        patterns.push(path.join(testDir, dirWithoutSrc, `${nameWithoutExt}.spec${ext}`));
+      }
+    }
+
+    // Find which patterns actually exist
+    const foundUris: vscode.Uri[] = [];
+    for (const pattern of patterns) {
+      const testUri = vscode.Uri.joinPath(workspaceFolder.uri, pattern);
+      try {
+        await vscode.workspace.fs.stat(testUri);
+        foundUris.push(testUri);
+      } catch {
+        // File doesn't exist, continue
+      }
+    }
+
+    return foundUris;
+  }
+
+  private async runContinuousTests(
+    request: vscode.TestRunRequest,
+    token: vscode.CancellationToken
+  ): Promise<void> {
+    this.outputChannel.appendLine('');
+    this.outputChannel.appendLine('='.repeat(60));
+    this.outputChannel.appendLine('⏯️  CONTINUOUS RUN MODE ACTIVATED');
+    this.outputChannel.appendLine(`Profile: ${request.profile?.label || 'default'}`);
+    this.outputChannel.appendLine('Tests will auto-run when source or test files are saved');
+    this.outputChannel.appendLine('='.repeat(60));
+
+    // Track queued test files for batched execution
+    const queuedTestFiles = new Set<string>();
+    let debounceTimer: NodeJS.Timeout | undefined;
+
+    // File change handler with debouncing
+    const handleFileChange = async (uri: vscode.Uri) => {
+      const isTestFile = uri.path.endsWith('.test.ts') || 
+                         uri.path.endsWith('.spec.ts') || 
+                         uri.path.endsWith('.test.js') || 
+                         uri.path.endsWith('.spec.js');
+
+      let testFilesToRun: vscode.Uri[] = [];
+
+      if (isTestFile) {
+        // Direct test file change
+        testFilesToRun.push(uri);
+        this.outputChannel.appendLine(`📝 Test file changed: ${uri.fsPath}`);
+      } else {
+        // Source file change - find corresponding test files
+        const ext = path.extname(uri.path);
+        const isSourceFile = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(ext);
+        
+        if (!isSourceFile) {
+          return; // Ignore non-source files (config, markdown, etc.)
+        }
+
+        this.outputChannel.appendLine(`📝 Source file changed: ${uri.fsPath}`);
+        testFilesToRun = await this.findTestFilesForSource(uri);
+        
+        if (testFilesToRun.length === 0) {
+          this.outputChannel.appendLine(`   ⚠️  No corresponding test file found`);
+          return;
+        }
+        
+        this.outputChannel.appendLine(`   → Found ${testFilesToRun.length} test file(s)`);
+      }
+
+      // Add test files to queue
+      for (const testUri of testFilesToRun) {
+        queuedTestFiles.add(testUri.toString());
+      }
+
+      // Clear existing timer
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+
+      // Debounce: wait 1 second after last change before running
+      debounceTimer = setTimeout(async () => {
+        if (queuedTestFiles.size === 0) {
+          return;
+        }
+
+        this.outputChannel.appendLine('');
+        this.outputChannel.appendLine(`🔄 Running tests for ${queuedTestFiles.size} changed file(s)...`);
+
+        // Get test items for changed files
+        const testsToRun = request.include?.filter(t => 
+          t.uri && queuedTestFiles.has(t.uri.toString())
+        ) || [];
+
+        if (testsToRun.length === 0) {
+          // Find test items from controller
+          for (const uriString of queuedTestFiles) {
+            const testItem = this.controller.items.get(uriString);
+            if (testItem) {
+              testsToRun.push(testItem);
+            }
+          }
+        }
+
+        queuedTestFiles.clear();
+
+        if (testsToRun.length > 0) {
+          // Create a new request for just these tests
+          const newRequest = new vscode.TestRunRequest(
+            testsToRun,
+            request.exclude,
+            request.profile,
+            true, // Keep continuous flag
+            request.preserveFocus
+          );
+
+          // Run the tests (this will call runContinuousTests again, but we'll handle it)
+          await this.runSingleTestExecution(newRequest, token);
+        }
+      }, 1000); // 1 second debounce
+    };
+
+    // Watch for file changes (async handler)
+    const fileWatcher = vscode.workspace.onDidSaveTextDocument((doc) => {
+      void handleFileChange(doc.uri);
+    });
+
+    // Handle cancellation
+    const cancellationHandler = token.onCancellationRequested(() => {
+      this.outputChannel.appendLine('');
+      this.outputChannel.appendLine('⏹️  Continuous run mode stopped');
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      fileWatcher.dispose();
+    });
+
+    this.outputChannel.appendLine('👀 Watching for file changes... (save a source or test file to trigger)');
+
+    // Run initial tests if requested
+    if (request.include && request.include.length > 0) {
+      this.outputChannel.appendLine('');
+      this.outputChannel.appendLine('▶️  Running initial test execution...');
+      await this.runSingleTestExecution(request, token);
+    }
+
+    // Keep the continuous run alive until cancelled
+    // The actual work happens in the file change handlers
+  }
+
+  private async runSingleTestExecution(
+    request: vscode.TestRunRequest,
+    token: vscode.CancellationToken
+  ): Promise<void> {
+    // Run tests without continuous mode to avoid recursion
+    const nonContinuousRequest = new vscode.TestRunRequest(
+      request.include,
+      request.exclude,
+      request.profile,
+      false, // NOT continuous
+      request.preserveFocus
+    );
+
+    const run = this.controller.createTestRun(nonContinuousRequest);
+    const queue: vscode.TestItem[] = [];
+
+    // Collect tests to run
+    if (nonContinuousRequest.include) {
+      nonContinuousRequest.include.forEach((test) => queue.push(test));
+      this.outputChannel.appendLine(
+        `  Running ${nonContinuousRequest.include.length} test file(s)`
+      );
+    }
+
+    try {
+      // Run each test
+      for (const test of queue) {
+        if (token.isCancellationRequested) {
+          this.outputChannel.appendLine('Test run cancelled');
+          run.skipped(test);
+          continue;
+        }
+
+        if (nonContinuousRequest.exclude?.includes(test)) {
+          continue;
+        }
+
+        await this.runTest(test, run, token);
+      }
+
+      this.outputChannel.appendLine('  ✓ Tests completed');
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.outputChannel.appendLine(`  ❌ Test run failed: ${errorMessage}`);
+    } finally {
+      run.end();
     }
   }
 

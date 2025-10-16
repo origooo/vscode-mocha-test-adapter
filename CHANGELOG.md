@@ -2,6 +2,29 @@
 
 All notable changes to the "Mocha Test Adapter" extension will be documented in this file.
 
+## [0.0.7] - 2025-10-16
+
+### Added
+- **Continuous Run Mode**: Auto-run tests on file save with smart source-to-test mapping
+  - Click the continuous run button (⏯️) to activate
+  - **Source file saves** → Automatically finds and runs corresponding test files
+    - `src/math.ts` → Runs `src/math.test.ts`, `test/math.test.ts`, etc.
+    - Supports patterns: `*.test.*`, `*.spec.*`, `__tests__/*.*, `test/`, `tests/`, etc.
+  - **Test file saves** → Runs the saved test file directly
+  - Smart performance: Only runs changed test files, not entire suite
+  - 1-second debounce to batch rapid saves
+  - Enabled for Run Tests, Unit Tests, and Integration Tests profiles
+  - Disabled for E2E tests (too slow for continuous mode)
+  - Perfect for TDD workflows with instant feedback on implementation changes
+
+### Technical Details
+- Set `supportsContinuousRun: true` on relevant profiles
+- Implemented `findTestFilesForSource()` to map source files to test files
+- Watches both source files (`.ts`, `.js`, `.tsx`, `.jsx`) and test files
+- Uses `vscode.workspace.onDidSaveTextDocument` for file change detection
+- Async file existence checks for test file pattern matching
+- Graceful cancellation handling with cleanup
+
 ## [0.0.6] - 2025-10-16
 
 ### Changed

@@ -13,6 +13,7 @@ A VS Code extension that provides Mocha test integration using the native Testin
 - **Enhanced Error Messages**: Shows stack traces with clickable file links and diffs for assertion failures
 - **Test Tags**: Organize and filter tests by tags (unit, integration, e2e, etc.)
 - **Configurable Test Options**: Configure Mocha timeout, grep patterns, slow threshold, and bail via UI
+- **Continuous Run Mode**: Auto-run tests on save with smart performance optimizations
 - **Real-time Updates**: Watches for file changes and updates tests automatically
 - **Nested Suites**: Properly handles nested `describe` blocks
 - **TypeScript & JavaScript**: Supports both TS and JS test files
@@ -134,6 +135,32 @@ The extension creates separate run profiles for different tags:
 - `slow` - Tests that take longer to run
 
 **Tag Inheritance**: Tests automatically inherit tags from their parent `describe` blocks.
+
+### Continuous Run Mode
+
+Enable **auto-run on save** for instant feedback during TDD:
+
+1. Click the **continuous run button** (⏯️) in the Testing view toolbar
+2. Select which profile to watch (Run Tests, Unit Tests, etc.)
+3. **Save any file** → Corresponding tests automatically run after 1 second
+4. **See instant results** without clicking anything
+5. **Click stop** (⏹️) to disable continuous mode
+
+**Smart File Mapping:**
+- ✅ **Source files** → Automatically finds and runs corresponding test files
+  - `src/math.ts` → Runs `src/math.test.ts` or `test/math.test.ts`
+  - Supports multiple patterns: `*.test.ts`, `*.spec.ts`, `__tests__/*.ts`, etc.
+- ✅ **Test files** → Runs the saved test file directly
+- ✅ **Only changed tests run** - Saves `math.ts` → Only runs `math.test.ts`, not entire suite
+- ✅ **1-second debounce** - Multiple saves within 1 second batched into single run
+- ✅ **Fast unit tests shine** - Typical unit test file completes in <1 second
+- ⚠️ **E2E tests disabled** - Continuous mode not available for slow E2E tests
+
+**Perfect for:**
+- Test-Driven Development (TDD) workflows
+- Red-Green-Refactor cycles
+- Immediate feedback when modifying implementation
+- Catching regressions instantly as you code
 
 ### Configuring Test Options
 

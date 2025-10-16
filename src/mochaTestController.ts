@@ -96,7 +96,7 @@ export class MochaTestController {
       },
       true,
       undefined,
-      false
+      true // Enable continuous run support
     );
     
     // Add configure handler for run profile
@@ -148,7 +148,7 @@ export class MochaTestController {
       },
       false, // Not default
       unitTag,
-      false
+      true // Enable continuous run for unit tests
     );
 
     const integrationTag = new vscode.TestTag('integration');
@@ -160,7 +160,7 @@ export class MochaTestController {
       },
       false,
       integrationTag,
-      false
+      true // Enable continuous run for integration tests
     );
 
     const e2eTag = new vscode.TestTag('e2e');
@@ -172,7 +172,7 @@ export class MochaTestController {
       },
       false,
       e2eTag,
-      false
+      false // Disable continuous run for e2e (too slow)
     );
     
     // Add configure handlers to tag-specific profiles too
