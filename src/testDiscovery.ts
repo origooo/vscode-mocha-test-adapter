@@ -127,11 +127,13 @@ export class TestDiscovery {
     const suiteStack: vscode.TestItem[] = [fileItem];
 
     // Regular expressions to match Mocha test structures
-    const describeRegex = /^\s*(describe|context)\s*\(\s*['"`]([^'"`]+)['"`]/;
-    const itRegex = /^\s*it\s*\(\s*['"`]([^'"`]+)['"`]/;
+    // Now includes .skip() and .only() variants
+    const describeRegex = /^\s*(describe|context)(\.(skip|only))?\s*\(\s*['"`]([^'"`]+)['"`]/;
+    const itRegex = /^\s*it(\.(skip|only))?\s*\(\s*['"`]([^'"`]+)['"`]/;
     const suiteEndRegex = /^\s*\}\s*\)/;
 
     let currentIndent = 0;
+    let skippedBlockIndent: number | null = null; // Track indentation of skipped describe block
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -145,8 +147,28 @@ export class TestDiscovery {
       // Match describe/context blocks
       const describeMatch = line.match(describeRegex);
       if (describeMatch) {
-        const suiteName = describeMatch[2];
+        const modifier = describeMatch[2]; // Will be '.skip' or '.only' or undefined
+        const suiteName = describeMatch[4]; // Suite name is now in capture group 4
+        const isSkipped = modifier === '.skip';
         const indent = line.search(/\S/);
+
+        // If we're exiting a skipped block (lower or equal indentation), clear the skip tracking
+        if (skippedBlockIndent !== null && indent <= skippedBlockIndent) {
+          skippedBlockIndent = null;
+        }
+
+        // Skip describe.skip() blocks entirely - don't add them or their children to Test Explorer
+        // This matches Mocha's behavior where skipped suites are completely hidden
+        if (isSkipped) {
+          // Track this indentation level so we can skip all nested content
+          skippedBlockIndent = indent;
+          continue;
+        }
+
+        // Skip all content inside a skipped describe block
+        if (skippedBlockIndent !== null && indent > skippedBlockIndent) {
+          continue;
+        }
 
         // Adjust the suite stack based on indentation
         while (
@@ -186,7 +208,22 @@ export class TestDiscovery {
       // Match it() test cases
       const itMatch = line.match(itRegex);
       if (itMatch) {
-        const testName = itMatch[1];
+        const modifier = itMatch[1]; // Will be '.skip' or '.only' or undefined
+        const testName = itMatch[3]; // Test name is now in capture group 3
+        const isSkipped = modifier === '.skip';
+        const indent = line.search(/\S/);
+        
+        // Skip tests inside a skipped describe block
+        if (skippedBlockIndent !== null && indent > skippedBlockIndent) {
+          continue;
+        }
+        
+        // Skip it.skip() tests entirely - don't add them to Test Explorer
+        // This matches the behavior you described where it.skip() tests are hidden
+        if (isSkipped) {
+          continue;
+        }
+        
         const parent = suiteStack[suiteStack.length - 1];
         const testId = `${parent.id}/${testName}`;
         const testItem = this.controller.createTestItem(

@@ -36,11 +36,17 @@ All notable changes to the "Mocha Test Adapter" extension will be documented in 
   - Reverts to defaults if config file is deleted
   - No extension reload needed!
 - **Enhanced Test Output**: Improved test run output with colors and statistics
-  - Color-coded test results: ✓ green for pass, ✗ red for fail
+  - Color-coded test results: ✓ green for pass, ✗ red for fail, ○ yellow for skipped
   - Test duration display for individual tests (e.g., "15ms", "1.23s")
   - Test run header showing total test count
-  - Summary statistics at end: "X passing, Y failing (total duration)"
+  - Summary statistics at end: "X passing, Y failing, Z skipped (total duration)"
+  - Skipped/pending test detection and proper status marking
   - ANSI color support for better readability in Test Results panel
+- **Skipped Test Handling**: Proper support for `.skip()` modifier
+  - `it.skip()` tests are hidden from Test Explorer (not discovered)
+  - `describe.skip()` suites are hidden from Test Explorer (including all child tests)
+  - Tests within `describe.skip()` blocks that don't have `.skip()` are also hidden
+  - Matches Mocha's behavior where skipped tests don't appear in test results
 
 ### Changed
 - **Documentation Reorganization**: Updated CONFIGURATION.md with property relevance categories
@@ -68,6 +74,14 @@ All notable changes to the "Mocha Test Adapter" extension will be documented in 
 - Import `createRequire` from `module` for proper CommonJS loading in ESM extension context
 - Added output formatting methods: `formatDuration()`, `formatTestSummary()`, `formatTestResult()`, `calculateStats()`
 - ANSI color codes defined for terminal output (green/red/yellow/cyan with reset/dim/bright modifiers)
+- Test results now include `pending` flag for skipped tests
+- JSON reporter parsing detects `test.pending === true` and `results.pending` array
+- Skipped tests properly marked with `run.skipped()` instead of passed/failed
+- Statistics calculation counts passed/failed/skipped separately
+- Test discovery regex patterns updated to match `.skip()` and `.only()` modifiers
+- `describe.skip()` blocks completely excluded from test tree (hidden from Test Explorer)
+- `it.skip()` tests completely excluded from test tree (hidden from Test Explorer)
+- Skipped tests within skipped suites are not shown in Test Explorer (matching Mocha behavior)
 
 ## [0.0.10] - 2025-10-16
 

@@ -968,7 +968,8 @@ export class TestRunner {
     const testResults = new Map<
       string,
       { 
-        passed: boolean; 
+        passed: boolean;
+        pending?: boolean; // Test is skipped/pending
         message?: string; 
         duration?: number;
         stack?: string;
@@ -1055,6 +1056,14 @@ export class TestRunner {
           // Parse JSON output
           try {
             const results = JSON.parse(stdout);
+            
+            // Log the full JSON structure for debugging
+            this.outputChannel.appendLine('  JSON structure:');
+            this.outputChannel.appendLine(`    tests: ${results.tests?.length || 0}`);
+            this.outputChannel.appendLine(`    pending: ${results.pending?.length || 0}`);
+            this.outputChannel.appendLine(`    failures: ${results.failures?.length || 0}`);
+            this.outputChannel.appendLine(`    passes: ${results.passes?.length || 0}`);
+            
             this.outputChannel.appendLine(
               `  Parsed ${results.tests?.length || 0} test result(s)`
             );
@@ -1062,18 +1071,41 @@ export class TestRunner {
             // Process test results
             if (results.tests) {
               for (const test of results.tests) {
-                // A test passes if err is null/undefined or an empty object
-                const passed = !test.err || (typeof test.err === 'object' && Object.keys(test.err).length === 0);
+                // Log test properties to see what's available
+                const testProps = Object.keys(test).join(', ');
+                this.outputChannel.appendLine(`    Test properties: ${testProps}`);
+                
+                // Check if test is pending/skipped (check both 'pending' and 'skipped' properties)
+                const isPending = test.pending === true || test.skipped === true;
+                
+                // A test passes if err is null/undefined or an empty object (and not pending)
+                const passed = !isPending && (!test.err || (typeof test.err === 'object' && Object.keys(test.err).length === 0));
+                
                 this.outputChannel.appendLine(
-                  `    Test: "${test.fullTitle}" - Passed: ${passed}, Err: ${test.err ? JSON.stringify(test.err) : 'null'}`
+                  `    Test: "${test.fullTitle}" - Passed: ${passed}, Pending: ${test.pending || false}, Skipped: ${test.skipped || false}, Err: ${test.err ? JSON.stringify(test.err) : 'null'}`
                 );
                 testResults.set(test.fullTitle, {
                   passed: passed,
+                  pending: isPending,
                   message: test.err?.message,
                   duration: test.duration,
                   stack: test.err?.stack,
                   expected: test.err?.expected,
                   actual: test.err?.actual,
+                });
+              }
+            }
+            
+            // Also process pending tests (tests that were never executed)
+            if (results.pending) {
+              for (const test of results.pending) {
+                this.outputChannel.appendLine(
+                  `    Pending Test: "${test.fullTitle}"`
+                );
+                testResults.set(test.fullTitle, {
+                  passed: false,
+                  pending: true,
+                  duration: 0,
                 });
               }
             }
@@ -1352,7 +1384,8 @@ export class TestRunner {
     fileItem: vscode.TestItem,
     run: vscode.TestRun,
     results: Map<string, { 
-      passed: boolean; 
+      passed: boolean;
+      pending?: boolean;
       message?: string; 
       duration?: number;
       stack?: string;
@@ -1367,7 +1400,8 @@ export class TestRunner {
     item: vscode.TestItem,
     run: vscode.TestRun,
     results: Map<string, { 
-      passed: boolean; 
+      passed: boolean;
+      pending?: boolean;
       message?: string; 
       duration?: number;
       stack?: string;
@@ -1388,9 +1422,13 @@ export class TestRunner {
       for (const [fullTitle, result] of results.entries()) {
         if (fullTitle === fullTitlePath || fullTitle.endsWith(fullTitlePath)) {
           this.outputChannel.appendLine(
-            `      ✓ Matched to Mocha result: "${fullTitle}" - Passed: ${result.passed}`
+            `      ✓ Matched to Mocha result: "${fullTitle}" - Passed: ${result.passed}, Pending: ${result.pending || false}`
           );
-          if (result.passed) {
+          
+          if (result.pending) {
+            // Mark test as skipped
+            run.skipped(item);
+          } else if (result.passed) {
             run.passed(item, result.duration);
           } else {
             // Create enhanced test message with location and diff
@@ -1619,7 +1657,8 @@ export class TestRunner {
    * Calculate test statistics from results
    */
   private calculateStats(results: Map<string, { 
-    passed: boolean; 
+    passed: boolean;
+    pending?: boolean;
     duration?: number;
   }>): {
     total: number;
@@ -1630,10 +1669,13 @@ export class TestRunner {
   } {
     let passed = 0;
     let failed = 0;
+    let skipped = 0;
     let totalDuration = 0;
     
     for (const result of results.values()) {
-      if (result.passed) {
+      if (result.pending) {
+        skipped++;
+      } else if (result.passed) {
         passed++;
       } else {
         failed++;
@@ -1645,8 +1687,10 @@ export class TestRunner {
       total: results.size,
       passed,
       failed,
-      skipped: 0, // We'll implement skipped test detection later
+      skipped,
       duration: totalDuration,
     };
   }
 }
+
+
