@@ -1,3 +1,11 @@
+# Build output
+dist
+*.vsix
+
+# VS Code test folder
+.vscode-test/
+
+# Yarn
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
@@ -11,3 +19,6 @@
 
 #!.yarn/cache
 .pnp.*
+
+# Node
+node_modules
