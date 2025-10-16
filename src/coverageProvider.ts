@@ -38,7 +38,17 @@ export class CoverageProvider {
   private async getC8Path(workspacePath: string, isPnP: boolean): Promise<string> {
     if (!isPnP) {
       // Non-PnP environment, use traditional node_modules path
-      return path.join(workspacePath, 'node_modules', 'c8', 'bin', 'c8.js');
+      const c8Path = path.join(workspacePath, 'node_modules', 'c8', 'bin', 'c8.js');
+      
+      // Verify c8 exists
+      try {
+        await vscode.workspace.fs.stat(vscode.Uri.file(c8Path));
+        return c8Path;
+      } catch {
+        throw new Error(
+          'c8 not found in workspace. Please install it for coverage support: npm install --save-dev c8'
+        );
+      }
     }
 
     // PnP environment, use 'yarn bin c8' to get the path
@@ -64,20 +74,16 @@ export class CoverageProvider {
           const c8Path = stdout.trim();
           resolve(c8Path);
         } else {
-          // Fallback to default path if yarn bin fails
-          this.outputChannel.appendLine(
-            `  ⚠ yarn bin c8 failed with code ${code}, using fallback path`
-          );
-          resolve(path.join(workspacePath, 'node_modules', 'c8', 'bin', 'c8.js'));
+          reject(new Error(
+            'c8 not found in workspace. Please install it for coverage support: yarn add -D c8'
+          ));
         }
       });
 
       child.on('error', (error) => {
-        // Fallback to default path on error
-        this.outputChannel.appendLine(
-          `  ⚠ Failed to run yarn bin c8: ${error.message}, using fallback path`
-        );
-        resolve(path.join(workspacePath, 'node_modules', 'c8', 'bin', 'c8.js'));
+        reject(new Error(
+          `Failed to locate c8: ${error.message}. Please install it: yarn add -D c8`
+        ));
       });
     });
   }

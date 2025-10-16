@@ -28,8 +28,21 @@ A VS Code extension that provides Mocha test integration using the native Testin
 
 ## Requirements
 
-- VS Code 1.85.0 or higher
-- Mocha tests in your workspace
+- VS Code 1.88.0 or higher
+- Mocha 10.x installed in your workspace
+- c8 10.x installed in your workspace (for coverage support)
+
+### Installation
+
+In your project, install Mocha and c8 as dev dependencies:
+
+```bash
+npm install --save-dev mocha c8
+# or
+yarn add -D mocha c8
+```
+
+The extension will automatically discover these dependencies in your workspace.
 
 ## Usage
 

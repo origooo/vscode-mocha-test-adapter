@@ -92,7 +92,17 @@ export class TestRunner {
   private async getMochaPath(workspacePath: string, isPnP: boolean): Promise<string> {
     if (!isPnP) {
       // Non-PnP environment, use traditional node_modules path
-      return path.join(workspacePath, 'node_modules', 'mocha', 'bin', 'mocha.js');
+      const mochaPath = path.join(workspacePath, 'node_modules', 'mocha', 'bin', 'mocha.js');
+      
+      // Verify mocha exists
+      try {
+        await vscode.workspace.fs.stat(vscode.Uri.file(mochaPath));
+        return mochaPath;
+      } catch {
+        throw new Error(
+          'Mocha not found in workspace. Please install it: npm install --save-dev mocha'
+        );
+      }
     }
 
     // PnP environment, use 'yarn bin mocha' to get the path
@@ -118,20 +128,16 @@ export class TestRunner {
           const mochaPath = stdout.trim();
           resolve(mochaPath);
         } else {
-          // Fallback to default path if yarn bin fails
-          this.outputChannel.appendLine(
-            `  ⚠ yarn bin mocha failed with code ${code}, using fallback path`
-          );
-          resolve(path.join(workspacePath, 'node_modules', 'mocha', 'bin', 'mocha.js'));
+          reject(new Error(
+            'Mocha not found in workspace. Please install it: yarn add -D mocha'
+          ));
         }
       });
 
       child.on('error', (error) => {
-        // Fallback to default path on error
-        this.outputChannel.appendLine(
-          `  ⚠ Failed to run yarn bin mocha: ${error.message}, using fallback path`
-        );
-        resolve(path.join(workspacePath, 'node_modules', 'mocha', 'bin', 'mocha.js'));
+        reject(new Error(
+          `Failed to locate Mocha: ${error.message}. Please install it: yarn add -D mocha`
+        ));
       });
     });
   }

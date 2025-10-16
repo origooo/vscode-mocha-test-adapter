@@ -4,9 +4,17 @@ All notable changes to the "Mocha Test Adapter" extension will be documented in 
 
 ## [0.0.6] - 2025-10-16
 
+### Changed
+- **BREAKING**: Removed `mocha` and `c8` as extension dependencies
+  - Users must now install `mocha` and `c8` in their workspace
+  - Extension discovers these dependencies automatically
+  - Shows helpful error messages if dependencies are missing
+  - Prevents version conflicts and allows users to choose their versions
+
 ### Fixed
 - Documentation clarification: Configure handlers are accessed via "Configure Test Profiles..." in the dropdown menu, not a gear icon
 - Added configure handlers to all profiles including tag-specific and coverage profiles
+- Improved error messages when Mocha or c8 are not installed
 
 ## [0.0.5] - 2025-10-16
 
