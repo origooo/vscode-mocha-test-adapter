@@ -6,7 +6,7 @@ let outputChannel: vscode.OutputChannel;
 
 export async function activate(context: vscode.ExtensionContext) {
   // Create output channel for logging
-  outputChannel = vscode.window.createOutputChannel('Mocha Tests');
+  outputChannel = vscode.window.createOutputChannel('Mocha Tests Adapter');
   context.subscriptions.push(outputChannel);
 
   outputChannel.appendLine('='.repeat(60));

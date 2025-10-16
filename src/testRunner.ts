@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import Mocha from 'mocha';
+import { spawn } from 'child_process';
+import * as path from 'path';
 
 enum ItemType {
   File,
@@ -18,6 +19,58 @@ export class TestRunner {
     private readonly testData: WeakMap<vscode.TestItem, TestData>,
     private readonly outputChannel: vscode.OutputChannel
   ) {}
+
+  /**
+   * Get the path to the Mocha binary.
+   * In PnP environments, uses 'yarn bin mocha' to resolve the virtual path.
+   * In traditional environments, returns the standard node_modules path.
+   */
+  private async getMochaPath(workspacePath: string, isPnP: boolean): Promise<string> {
+    if (!isPnP) {
+      // Non-PnP environment, use traditional node_modules path
+      return path.join(workspacePath, 'node_modules', 'mocha', 'bin', 'mocha.js');
+    }
+
+    // PnP environment, use 'yarn bin mocha' to get the path
+    return new Promise((resolve, reject) => {
+      const child = spawn('yarn', ['bin', 'mocha'], {
+        cwd: workspacePath,
+        env: process.env,
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout?.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      child.stderr?.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      child.on('close', (code) => {
+        if (code === 0 && stdout.trim()) {
+          const mochaPath = stdout.trim();
+          resolve(mochaPath);
+        } else {
+          // Fallback to default path if yarn bin fails
+          this.outputChannel.appendLine(
+            `  ⚠ yarn bin mocha failed with code ${code}, using fallback path`
+          );
+          resolve(path.join(workspacePath, 'node_modules', 'mocha', 'bin', 'mocha.js'));
+        }
+      });
+
+      child.on('error', (error) => {
+        // Fallback to default path on error
+        this.outputChannel.appendLine(
+          `  ⚠ Failed to run yarn bin mocha: ${error.message}, using fallback path`
+        );
+        resolve(path.join(workspacePath, 'node_modules', 'mocha', 'bin', 'mocha.js'));
+      });
+    });
+  }
 
   async runTests(
     request: vscode.TestRunRequest,
@@ -83,22 +136,66 @@ export class TestRunner {
 
     const run = this.controller.createTestRun(request);
 
+    // Get workspace folder from the first test item
+    let workspaceFolder: vscode.WorkspaceFolder | undefined;
+    if (request.include && request.include.length > 0) {
+      const firstTest = request.include[0];
+      workspaceFolder = firstTest.uri
+        ? vscode.workspace.getWorkspaceFolder(firstTest.uri)
+        : vscode.workspace.workspaceFolders?.[0];
+    } else {
+      workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    }
+
+    if (!workspaceFolder) {
+      this.outputChannel.appendLine('❌ No workspace folder found for debugging');
+      run.end();
+      return;
+    }
+
+    const workspacePath = workspaceFolder.uri.fsPath;
+
+    // Check if PnP is being used
+    const pnpCjsPath = path.join(workspacePath, '.pnp.cjs');
+    let isPnP = false;
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(pnpCjsPath));
+      isPnP = true;
+      this.outputChannel.appendLine('✓ PnP detected for debugging');
+    } catch {
+      this.outputChannel.appendLine('No PnP detected for debugging');
+    }
+
+    // Get the Mocha path
+    const mochaPath = await this.getMochaPath(workspacePath, isPnP);
+    this.outputChannel.appendLine(`Debug Mocha path: ${mochaPath}`);
+
     // For debugging, we'll use VS Code's debug API
     const debugConfig: vscode.DebugConfiguration = {
       type: 'node',
       request: 'launch',
       name: 'Debug Mocha Tests',
-      program: '${workspaceFolder}/node_modules/mocha/bin/_mocha',
+      program: mochaPath,
       args: this.getTestArgs(request),
+      cwd: workspacePath,
       internalConsoleOptions: 'openOnSessionStart',
       console: 'internalConsole',
     };
+
+    // Add PnP support to the debug configuration if needed
+    if (isPnP) {
+      debugConfig.runtimeArgs = ['--require', pnpCjsPath];
+      this.outputChannel.appendLine('✓ Added PnP loader to debug configuration');
+    }
 
     this.outputChannel.appendLine('Debug configuration:');
     this.outputChannel.appendLine(JSON.stringify(debugConfig, null, 2));
 
     // Start debugging
-    const started = await vscode.debug.startDebugging(undefined, debugConfig);
+    const started = await vscode.debug.startDebugging(
+      workspaceFolder,
+      debugConfig
+    );
 
     if (started) {
       this.outputChannel.appendLine('✓ Debug session started');
@@ -176,27 +273,72 @@ export class TestRunner {
       return;
     }
 
-    this.outputChannel.appendLine(`  File path: ${fileItem.uri.fsPath}`);
+    const testFilePath = fileItem.uri.fsPath;
+    this.outputChannel.appendLine(`  File path: ${testFilePath}`);
 
-    // Create a new Mocha instance
-    const mocha = new Mocha({
-      ui: 'bdd',
-      timeout: 5000,
-    });
-
-    this.outputChannel.appendLine('  Creating Mocha instance...');
-
-    // Add the test file
-    try {
-      mocha.addFile(fileItem.uri.fsPath);
-      this.outputChannel.appendLine('  ✓ Test file added to Mocha');
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      this.outputChannel.appendLine(`  ❌ Failed to add file: ${errorMessage}`);
-      run.errored(fileItem, new vscode.TestMessage(errorMessage));
+    // Get the workspace folder
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileItem.uri);
+    if (!workspaceFolder) {
+      const errorMsg = 'Could not determine workspace folder';
+      this.outputChannel.appendLine(`❌ ${errorMsg}`);
+      run.errored(fileItem, new vscode.TestMessage(errorMsg));
       return;
     }
+
+    const workspacePath = workspaceFolder.uri.fsPath;
+    this.outputChannel.appendLine(`  Workspace: ${workspacePath}`);
+
+    // Find the Mocha binary - check for Yarn PnP first
+    const pnpCjsPath = path.join(workspacePath, '.pnp.cjs');
+    const pnpLoaderPath = path.join(workspacePath, '.pnp.loader.mjs');
+    
+    this.outputChannel.appendLine(`  Looking for PnP files...`);
+    this.outputChannel.appendLine(`    .pnp.cjs: ${pnpCjsPath}`);
+    
+    // Prepare the command to run Mocha with PnP support
+    const nodeArgs: string[] = [];
+    
+    // Add PnP dependency file if it exists
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(pnpCjsPath));
+      nodeArgs.push('--require', pnpCjsPath);
+      this.outputChannel.appendLine(`  ✓ Found .pnp.cjs, will use dependencies from PnP`);
+    } catch {
+      this.outputChannel.appendLine(`  ⚠ .pnp.cjs not found, running without PnP`);
+    }
+    
+    // Add PnP loader if it exists
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(pnpLoaderPath));
+      nodeArgs.push('--experimental-loader', pnpLoaderPath);
+      this.outputChannel.appendLine(`  ✓ Found .pnp.loader.mjs, will use PnP loader`);
+    } catch {
+      this.outputChannel.appendLine(`  ⚠ .pnp.loader.mjs not found, running default loader PnP`);
+    }
+
+    // Determine the Mocha binary path
+    const isPnP = nodeArgs.some(arg => arg.includes('.pnp.cjs'));
+    
+    this.outputChannel.appendLine(
+      isPnP
+        ? '  Detecting Mocha path for PnP environment...'
+        : '  Using traditional Mocha path...'
+    );
+    
+    const mochaPath = await this.getMochaPath(workspacePath, isPnP);
+    this.outputChannel.appendLine(`  ✓ Mocha path: ${mochaPath}`);
+    
+    // Build the command
+    const args = [
+      ...nodeArgs,
+      mochaPath,
+      testFilePath,
+      '--reporter', 'json', // Use JSON reporter for easy parsing
+      '--ui', 'bdd',
+      '--timeout', '5000',
+    ];
+
+    this.outputChannel.appendLine(`  Running command: node ${args.join(' ')}`);
 
     // Track test results
     const testResults = new Map<
@@ -205,53 +347,91 @@ export class TestRunner {
     >();
 
     try {
-      this.outputChannel.appendLine('  Running tests with Mocha...');
-
-      // Run the tests
       await new Promise<void>((resolve, reject) => {
-        const runner = mocha.run((failures) => {
+        let stdout = '';
+        let stderr = '';
+
+        const child = spawn('node', args, {
+          cwd: workspacePath,
+          env: {
+            ...process.env,
+            NODE_OPTIONS: nodeArgs.length > 0 ? nodeArgs.join(' ') : undefined,
+          },
+        });
+
+        child.stdout?.on('data', (data) => {
+          const output = data.toString();
+          stdout += output;
+          this.outputChannel.appendLine(`  [stdout] ${output.trim()}`);
+        });
+
+        child.stderr?.on('data', (data) => {
+          const output = data.toString();
+          stderr += output;
+          this.outputChannel.appendLine(`  [stderr] ${output.trim()}`);
+        });
+
+        child.on('error', (error) => {
           this.outputChannel.appendLine(
-            `  Mocha run completed with ${failures} failure(s)`
+            `  ❌ Failed to spawn Mocha: ${error.message}`
           );
-          if (failures > 0) {
-            resolve();
-          } else {
-            resolve();
-          }
+          reject(error);
         });
 
-        runner.on('test', (test) => {
-          const testId = this.findTestItemId(fileItem, test.fullTitle());
-          if (testId) {
-            const testItem = this.findTestItem(fileItem, testId);
-            if (testItem) {
-              run.started(testItem);
+        child.on('close', (code) => {
+          this.outputChannel.appendLine(
+            `  Mocha process exited with code ${code}`
+          );
+
+          // Parse JSON output
+          try {
+            const results = JSON.parse(stdout);
+            this.outputChannel.appendLine(
+              `  Parsed ${results.tests?.length || 0} test result(s)`
+            );
+
+            // Process test results
+            if (results.tests) {
+              for (const test of results.tests) {
+                // A test passes if err is null/undefined or an empty object
+                const passed = !test.err || (typeof test.err === 'object' && Object.keys(test.err).length === 0);
+                this.outputChannel.appendLine(
+                  `    Test: "${test.fullTitle}" - Passed: ${passed}, Err: ${test.err ? JSON.stringify(test.err) : 'null'}`
+                );
+                testResults.set(test.fullTitle, {
+                  passed: passed,
+                  message: test.err?.message,
+                  duration: test.duration,
+                });
+              }
             }
+
+            resolve();
+          } catch (parseError) {
+            this.outputChannel.appendLine(
+              `  ⚠ Failed to parse JSON output, using exit code`
+            );
+            // If JSON parsing fails, just check exit code
+            if (code === 0) {
+              // Mark all tests as passed (couldn't parse details)
+              fileItem.children.forEach((child) => {
+                this.markAllChildrenPassed(child, run);
+              });
+            }
+            resolve();
           }
         });
 
-        runner.on('pass', (test) => {
-          testResults.set(test.fullTitle(), {
-            passed: true,
-            duration: test.duration,
-          });
-        });
-
-        runner.on('fail', (test, err) => {
-          testResults.set(test.fullTitle(), {
-            passed: false,
-            message: err.message,
-          });
-        });
-
-        runner.on('end', () => {
-          resolve();
-        });
-
+        // Handle cancellation
         if (token.isCancellationRequested) {
-          runner.abort();
+          child.kill();
           reject(new Error('Test run cancelled'));
         }
+
+        token.onCancellationRequested(() => {
+          child.kill();
+          reject(new Error('Test run cancelled'));
+        });
       });
 
       // Update test results
@@ -263,14 +443,28 @@ export class TestRunner {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      this.outputChannel.appendLine(
-        `  ❌ Error running tests: ${errorMessage}`
-      );
+      this.outputChannel.appendLine(`  ❌ Error running tests: ${errorMessage}`);
       if (error instanceof Error && error.stack) {
         this.outputChannel.appendLine(error.stack);
       }
-      run.errored(fileItem, new vscode.TestMessage(`Error running tests: ${errorMessage}`));
+      run.errored(
+        fileItem,
+        new vscode.TestMessage(`Error running tests: ${errorMessage}`)
+      );
     }
+  }
+
+  private markAllChildrenPassed(
+    item: vscode.TestItem,
+    run: vscode.TestRun
+  ): void {
+    const data = this.testData.get(item);
+    if (data?.type === ItemType.Test) {
+      run.passed(item);
+    }
+    item.children.forEach((child) => {
+      this.markAllChildrenPassed(child, run);
+    });
   }
 
   private async runSingleTest(
@@ -285,21 +479,45 @@ export class TestRunner {
     }
 
     if (!fileItem || !fileItem.uri) {
-      run.errored(
-        testItem,
-        new vscode.TestMessage('Could not find test file')
-      );
+      run.errored(testItem, new vscode.TestMessage('Could not find test file'));
       return;
     }
 
-    // For single test execution, we'll use grep to filter
-    const mocha = new Mocha({
-      ui: 'bdd',
-      timeout: 5000,
-      grep: testItem.label,
-    });
+    const testFilePath = fileItem.uri.fsPath;
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileItem.uri);
+    
+    if (!workspaceFolder) {
+      run.errored(testItem, new vscode.TestMessage('Could not determine workspace folder'));
+      return;
+    }
 
-    mocha.addFile(fileItem.uri.fsPath);
+    const workspacePath = workspaceFolder.uri.fsPath;
+    
+    // Prepare node args with PnP support
+    const nodeArgs: string[] = [];
+    const pnpCjsPath = path.join(workspacePath, '.pnp.cjs');
+    
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(pnpCjsPath));
+      nodeArgs.push('--require', pnpCjsPath);
+    } catch {
+      // PnP not found, continue without it
+    }
+
+    // Determine the Mocha binary path (same logic as runFileTests)
+    const isPnP = nodeArgs.some((arg) => arg.includes('.pnp.cjs'));
+    const mochaPath = await this.getMochaPath(workspacePath, isPnP);
+
+    // For single test execution, use grep to filter
+    const args = [
+      ...nodeArgs,
+      mochaPath,
+      testFilePath,
+      '--reporter', 'json',
+      '--ui', 'bdd',
+      '--timeout', '5000',
+      '--grep', testItem.label,
+    ];
 
     const startTime = Date.now();
 
@@ -307,31 +525,83 @@ export class TestRunner {
       run.started(testItem);
 
       await new Promise<void>((resolve, reject) => {
-        const runner = mocha.run((failures) => {
-          if (failures > 0) {
-            reject(new Error('Test failed'));
-          } else {
-            resolve();
+        let stdout = '';
+        let stderr = '';
+
+        const child = spawn('node', args, {
+          cwd: workspacePath,
+          env: {
+            ...process.env,
+            NODE_OPTIONS: nodeArgs.length > 0 ? nodeArgs.join(' ') : undefined,
+          },
+        });
+
+        child.stdout?.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        child.stderr?.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        child.on('close', (code) => {
+          const duration = Date.now() - startTime;
+
+          try {
+            const results = JSON.parse(stdout);
+            if (results.tests && results.tests.length > 0) {
+              const test = results.tests[0];
+              // A test passes if err is null/undefined or an empty object
+              const passed = !test.err || (typeof test.err === 'object' && Object.keys(test.err).length === 0);
+              if (passed) {
+                run.passed(testItem, duration);
+              } else {
+                run.failed(
+                  testItem,
+                  new vscode.TestMessage(test.err?.message || 'Test failed'),
+                  duration
+                );
+              }
+            } else if (code === 0) {
+              run.passed(testItem, duration);
+            } else {
+              run.failed(
+                testItem,
+                new vscode.TestMessage(stderr || 'Test failed'),
+                duration
+              );
+            }
+          } catch {
+            // JSON parse failed, use exit code
+            if (code === 0) {
+              run.passed(testItem, duration);
+            } else {
+              run.failed(
+                testItem,
+                new vscode.TestMessage(stderr || 'Test failed'),
+                duration
+              );
+            }
           }
-        });
 
-        runner.on('fail', (test, err) => {
-          const duration = Date.now() - startTime;
-          run.failed(testItem, new vscode.TestMessage(err.message), duration);
           resolve();
         });
 
-        runner.on('pass', () => {
-          const duration = Date.now() - startTime;
-          run.passed(testItem, duration);
-          resolve();
+        child.on('error', (error) => {
+          reject(error);
         });
 
         if (token.isCancellationRequested) {
-          runner.abort();
+          child.kill();
           run.skipped(testItem);
           reject(new Error('Test cancelled'));
         }
+
+        token.onCancellationRequested(() => {
+          child.kill();
+          run.skipped(testItem);
+          reject(new Error('Test cancelled'));
+        });
       });
     } catch (error) {
       const duration = Date.now() - startTime;
@@ -406,9 +676,18 @@ export class TestRunner {
     const data = this.testData.get(item);
 
     if (data?.type === ItemType.Test) {
-      // Find the result for this test
+      // Build the full title path for this test item
+      const fullTitlePath = this.buildFullTitlePath(item);
+      this.outputChannel.appendLine(
+        `    Matching test item "${item.label}" with path: "${fullTitlePath}"`
+      );
+      
+      // Find the result for this test by exact match or by checking if the full title ends with our path
       for (const [fullTitle, result] of results.entries()) {
-        if (fullTitle.includes(item.label)) {
+        if (fullTitle === fullTitlePath || fullTitle.endsWith(fullTitlePath)) {
+          this.outputChannel.appendLine(
+            `      ✓ Matched to Mocha result: "${fullTitle}" - Passed: ${result.passed}`
+          );
           if (result.passed) {
             run.passed(item, result.duration);
           } else {
@@ -421,11 +700,34 @@ export class TestRunner {
           return;
         }
       }
+      
+      this.outputChannel.appendLine(
+        `      ⚠ No matching result found for: "${fullTitlePath}"`
+      );
     }
 
     // Recursively update children
     for (const [, child] of item.children) {
       this.updateChildResults(child, run, results);
     }
+  }
+
+  /**
+   * Build the full title path for a test item (e.g., "Suite Name test name")
+   */
+  private buildFullTitlePath(item: vscode.TestItem): string {
+    const parts: string[] = [];
+    let current: vscode.TestItem | undefined = item;
+
+    while (current) {
+      const data = this.testData.get(current);
+      // Skip the file item
+      if (data?.type !== ItemType.File) {
+        parts.unshift(current.label);
+      }
+      current = current.parent;
+    }
+
+    return parts.join(' ');
   }
 }
