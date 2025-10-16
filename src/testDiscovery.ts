@@ -12,11 +12,53 @@ interface TestData {
 }
 
 export class TestDiscovery {
+  private tagMap: Map<string, vscode.TestTag> = new Map();
+
   constructor(
     private readonly controller: vscode.TestController,
     private readonly testData: WeakMap<vscode.TestItem, TestData>,
     private readonly outputChannel: vscode.OutputChannel
-  ) {}
+  ) {
+    // Initialize common test tags
+    this.getOrCreateTag('unit');
+    this.getOrCreateTag('integration');
+    this.getOrCreateTag('e2e');
+    this.getOrCreateTag('slow');
+    this.getOrCreateTag('skip');
+  }
+
+  private getOrCreateTag(id: string): vscode.TestTag {
+    let tag = this.tagMap.get(id);
+    if (!tag) {
+      tag = new vscode.TestTag(id);
+      this.tagMap.set(id, tag);
+    }
+    return tag;
+  }
+
+  private extractTags(text: string): vscode.TestTag[] {
+    const tags: vscode.TestTag[] = [];
+    
+    // Match [tag] or @tag patterns
+    const bracketTags = text.match(/\[(\w+)\]/g);
+    const atTags = text.match(/@(\w+)/g);
+    
+    if (bracketTags) {
+      for (const match of bracketTags) {
+        const tagName = match.slice(1, -1).toLowerCase(); // Remove [ and ]
+        tags.push(this.getOrCreateTag(tagName));
+      }
+    }
+    
+    if (atTags) {
+      for (const match of atTags) {
+        const tagName = match.slice(1).toLowerCase(); // Remove @
+        tags.push(this.getOrCreateTag(tagName));
+      }
+    }
+    
+    return tags;
+  }
 
   async parseTestFile(uri: vscode.Uri): Promise<void> {
     this.outputChannel.appendLine(`Parsing test file: ${uri.fsPath}`);
@@ -127,6 +169,12 @@ export class TestDiscovery {
         const range = new vscode.Range(i, 0, i, line.length);
         suiteItem.range = range;
 
+        // Extract and assign tags
+        const tags = this.extractTags(suiteName);
+        if (tags.length > 0) {
+          suiteItem.tags = tags;
+        }
+
         this.testData.set(suiteItem, { type: ItemType.Suite, line: i });
         parent.children.add(suiteItem);
 
@@ -149,6 +197,17 @@ export class TestDiscovery {
 
         const range = new vscode.Range(i, 0, i, line.length);
         testItem.range = range;
+
+        // Extract and assign tags from test name
+        const tags = this.extractTags(testName);
+        
+        // Inherit tags from parent suite
+        const parentTags = parent.tags || [];
+        const allTags = [...parentTags, ...tags];
+        
+        if (allTags.length > 0) {
+          testItem.tags = allTags;
+        }
 
         this.testData.set(testItem, { type: ItemType.Test, line: i });
         parent.children.add(testItem);

@@ -14,13 +14,75 @@ interface TestData {
   line?: number;
 }
 
+interface MochaConfig {
+  timeout: number;
+  grep?: string;
+  slow: number;
+  bail: boolean;
+}
+
 export class TestRunner {
+  private config: MochaConfig = {
+    timeout: 5000,
+    slow: 75,
+    bail: false,
+  };
+
   constructor(
     private readonly controller: vscode.TestController,
     private readonly testData: WeakMap<vscode.TestItem, TestData>,
     private readonly outputChannel: vscode.OutputChannel,
     private readonly coverage?: CoverageProvider
   ) {}
+
+  updateConfig(config: MochaConfig): void {
+    this.config = config;
+    this.outputChannel.appendLine(`Configuration updated: ${JSON.stringify(config)}`);
+  }
+
+  /**
+   * Recursively collect items that have a specific tag.
+   * Collects the highest-level items (file/suite) that have the tag,
+   * avoiding duplicate collection of child tests.
+   */
+  private collectTestsWithTag(
+    item: vscode.TestItem,
+    tag: vscode.TestTag,
+    queue: vscode.TestItem[]
+  ): void {
+    // Check if this item has the required tag
+    const hasTag = item.tags.some(t => t.id === tag.id);
+    
+    if (hasTag) {
+      // This item has the tag - add it and don't recurse into children
+      // (running the parent will run all children)
+      queue.push(item);
+    } else {
+      // This item doesn't have the tag, but its children might
+      item.children.forEach(child => {
+        this.collectTestsWithTag(child, tag, queue);
+      });
+    }
+  }
+  
+  /**
+   * Count the total number of test items recursively.
+   */
+  private countTests(item: vscode.TestItem): number {
+    const data = this.testData.get(item);
+    
+    // If it's a test, count as 1
+    if (data?.type === ItemType.Test) {
+      return 1;
+    }
+    
+    // If it's a file or suite, count all children
+    let count = 0;
+    item.children.forEach(child => {
+      count += this.countTests(child);
+    });
+    return count;
+  }
 
   /**
    * Get the path to the Mocha binary.
@@ -81,6 +143,8 @@ export class TestRunner {
     this.outputChannel.appendLine('');
     this.outputChannel.appendLine('='.repeat(60));
     this.outputChannel.appendLine('Starting test run...');
+    this.outputChannel.appendLine(`Profile: ${request.profile?.label || 'default'}`);
+    this.outputChannel.appendLine(`Profile tag: ${request.profile?.tag?.id || 'none'}`);
     this.outputChannel.appendLine('='.repeat(60));
 
     const run = this.controller.createTestRun(request);
@@ -88,13 +152,39 @@ export class TestRunner {
 
     // Collect tests to run
     if (request.include) {
-      request.include.forEach((test) => queue.push(test));
+      request.include.forEach((test) => {
+        queue.push(test);
+        this.outputChannel.appendLine(
+          `  Test: ${test.label}, Tags: ${test.tags.map(t => t.id).join(', ') || 'none'}`
+        );
+      });
       this.outputChannel.appendLine(
         `Running ${request.include.length} specific test(s)`
       );
     } else {
-      this.controller.items.forEach((test) => queue.push(test));
-      this.outputChannel.appendLine('Running all tests');
+      // No specific tests requested - collect all tests and filter by profile tag if needed
+      const profileTag = request.profile?.tag;
+      
+      this.controller.items.forEach((fileItem) => {
+        if (profileTag) {
+          // Filter tests by tag - only include tests that have the profile's tag
+          this.collectTestsWithTag(fileItem, profileTag, queue);
+        } else {
+          // No tag filter - add all tests
+          queue.push(fileItem);
+        }
+      });
+      
+      if (profileTag) {
+        // Count actual tests within collected items
+        const testCount = queue.reduce((sum, item) => sum + this.countTests(item), 0);
+        this.outputChannel.appendLine(
+          `Running tests with tag "${profileTag.id}" (${queue.length} suite(s), ${testCount} test(s))`
+        );
+      } else {
+        const testCount = queue.reduce((sum, item) => sum + this.countTests(item), 0);
+        this.outputChannel.appendLine(`Running all tests (${queue.length} suite(s), ${testCount} test(s))`);
+      }
     }
 
     try {
@@ -242,8 +332,29 @@ export class TestRunner {
         `Running ${request.include.length} specific test(s) with coverage`
       );
     } else {
-      this.controller.items.forEach((test) => queue.push(test));
-      this.outputChannel.appendLine('Running all tests with coverage');
+      // No specific tests requested - collect all tests and filter by profile tag if needed
+      const profileTag = request.profile?.tag;
+      
+      this.controller.items.forEach((fileItem) => {
+        if (profileTag) {
+          // Filter tests by tag - only include tests that have the profile's tag
+          this.collectTestsWithTag(fileItem, profileTag, queue);
+        } else {
+          // No tag filter - add all tests
+          queue.push(fileItem);
+        }
+      });
+      
+      if (profileTag) {
+        // Count actual tests within collected items
+        const testCount = queue.reduce((sum, item) => sum + this.countTests(item), 0);
+        this.outputChannel.appendLine(
+          `Running tests with tag "${profileTag.id}" with coverage (${queue.length} suite(s), ${testCount} test(s))`
+        );
+      } else {
+        const testCount = queue.reduce((sum, item) => sum + this.countTests(item), 0);
+        this.outputChannel.appendLine(`Running all tests with coverage (${queue.length} suite(s), ${testCount} test(s))`);
+      }
     }
 
     try {
@@ -545,22 +656,33 @@ export class TestRunner {
     this.outputChannel.appendLine(`  ✓ Mocha path: ${mochaPath}`);
     
     // Build the command - run twice: once with spec for output, once with json for parsing
-    const jsonArgs = [
+    const baseArgs = [
       ...nodeArgs,
       mochaPath,
       testFilePath,
-      '--reporter', 'json', // Use JSON reporter for parsing results
       '--ui', 'bdd',
-      '--timeout', '5000',
+      '--timeout', this.config.timeout.toString(),
+      '--slow', this.config.slow.toString(),
+    ];
+    
+    // Add grep pattern if configured
+    if (this.config.grep) {
+      baseArgs.push('--grep', this.config.grep);
+    }
+    
+    // Add bail if configured
+    if (this.config.bail) {
+      baseArgs.push('--bail');
+    }
+
+    const jsonArgs = [
+      ...baseArgs,
+      '--reporter', 'json', // Use JSON reporter for parsing results
     ];
 
     const specArgs = [
-      ...nodeArgs,
-      mochaPath,
-      testFilePath,
+      ...baseArgs,
       '--reporter', 'spec', // Use spec reporter for clean terminal output
-      '--ui', 'bdd',
-      '--timeout', '5000',
     ];
 
     this.outputChannel.appendLine(`  Running command: node ${jsonArgs.join(' ')}`);
@@ -772,9 +894,15 @@ export class TestRunner {
       testFilePath,
       '--reporter', 'json',
       '--ui', 'bdd',
-      '--timeout', '5000',
+      '--timeout', this.config.timeout.toString(),
+      '--slow', this.config.slow.toString(),
       '--grep', testItem.label,
     ];
+    
+    // Add bail if configured
+    if (this.config.bail) {
+      args.push('--bail');
+    }
 
     const startTime = Date.now();
 

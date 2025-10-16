@@ -9,10 +9,26 @@ interface CoverageData {
   fileCoverageMap: Map<string, vscode.FileCoverage>;
 }
 
+interface MochaConfig {
+  timeout: number;
+  grep?: string;
+  slow: number;
+  bail: boolean;
+}
+
 export class CoverageProvider {
   private coverageDataMap = new WeakMap<vscode.TestRun, CoverageData>();
+  private config: MochaConfig = {
+    timeout: 5000,
+    slow: 75,
+    bail: false,
+  };
 
   constructor(private readonly outputChannel: vscode.OutputChannel) {}
+
+  updateConfig(config: MochaConfig): void {
+    this.config = config;
+  }
 
   /**
    * Get the path to the c8 binary.
@@ -116,8 +132,20 @@ export class CoverageProvider {
         '--ui',
         'bdd',
         '--timeout',
-        '5000',
+        this.config.timeout.toString(),
+        '--slow',
+        this.config.slow.toString(),
       ];
+      
+      // Add grep pattern if configured
+      if (this.config.grep) {
+        c8Args.push('--grep', this.config.grep);
+      }
+      
+      // Add bail if configured
+      if (this.config.bail) {
+        c8Args.push('--bail');
+      }
 
       this.outputChannel.appendLine(
         `  Running with coverage: node ${c8Args.join(' ')}`

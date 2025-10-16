@@ -1,14 +1,14 @@
 {
   "name": "copilot-mocha-extension",
   "displayName": "Mocha Test Adapter",
-  "description": "Run Mocha tests using VSCode's native Testing API",
-  "version": "0.0.3",
-  "publisher": "origo",
+  "description": "Mocha test adapter for VS Code using the native Testing API",
+  "version": "0.0.6",
+  "publisher": "your-publisher-name",
   "license": "MIT",
   "type": "module",
   "packageManager": "yarn@4.6.0",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.88.0"
   },
   "categories": [
     "Testing"

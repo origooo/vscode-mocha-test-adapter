@@ -11,6 +11,8 @@ A VS Code extension that provides Mocha test integration using the native Testin
 - **Code Coverage**: Built-in coverage support with detailed statement and branch coverage
 - **Test Output**: Captures and displays console.log() and test output in Test Results view
 - **Enhanced Error Messages**: Shows stack traces with clickable file links and diffs for assertion failures
+- **Test Tags**: Organize and filter tests by tags (unit, integration, e2e, etc.)
+- **Configurable Test Options**: Configure Mocha timeout, grep patterns, slow threshold, and bail via UI
 - **Real-time Updates**: Watches for file changes and updates tests automatically
 - **Nested Suites**: Properly handles nested `describe` blocks
 - **TypeScript & JavaScript**: Supports both TS and JS test files
@@ -76,6 +78,64 @@ When tests fail, you get detailed information:
 - **Error Context**: Full error messages with all details from Mocha
 
 Click on any stack trace line to jump directly to that location in your code.
+
+### Test Tags
+
+Organize your tests using tags to run specific subsets of tests:
+
+**Tagging Tests**:
+Use `[tag]` or `@tag` syntax in test names:
+```typescript
+describe('[unit] Math utilities', () => {
+  it('@slow should calculate factorial', () => {
+    // Test code
+  });
+});
+
+describe('@integration API tests', () => {
+  it('[e2e] should handle full workflow', () => {
+    // Test code
+  });
+});
+```
+
+**Running Tagged Tests**:
+The extension creates separate run profiles for different tags:
+1. Click the dropdown arrow next to the Run button in the Testing view
+2. Select a tag-specific profile:
+   - **Run Unit Tests** - Only runs tests tagged with `[unit]` or `@unit`
+   - **Run Integration Tests** - Only runs `@integration` tests
+   - **Run E2E Tests** - Only runs `[e2e]` tests
+3. Only tests with matching tags will execute
+
+**How It Works**:
+- Tests with `[unit]` or `@unit` tags can ONLY be run via the "Run Unit Tests" profile
+- Tests without tags can be run with the default "Run Tests" profile
+- VS Code's Testing API ensures tests only appear under their matching profiles
+- This prevents accidentally running slow integration/e2e tests during unit test runs
+
+**Common Tags**:
+- `unit` - Fast, isolated unit tests
+- `integration` - Integration tests with external dependencies
+- `e2e` - End-to-end tests
+- `slow` - Tests that take longer to run
+
+**Tag Inheritance**: Tests automatically inherit tags from their parent `describe` blocks.
+
+### Configuring Test Options
+
+To configure Mocha options:
+
+1. Click the **dropdown arrow** next to "Run Tests" in the Testing view
+2. Select **"Configure Test Profiles..."** from the menu
+3. Choose which profile to configure (Run Tests, Debug Tests, etc.)
+4. Enter your preferences in the dialogs:
+   - **Timeout**: Maximum time for tests (default: 5000ms)
+   - **Grep Pattern**: Filter tests by name (e.g., "should work" or "/pattern/")
+   - **Slow Threshold**: Mark tests as slow above this duration (default: 75ms)
+   - **Bail**: Stop after first test failure (useful for debugging)
+
+Configuration applies to all test runs until changed. Settings are remembered during your session.
 
 ### Manual Refresh
 

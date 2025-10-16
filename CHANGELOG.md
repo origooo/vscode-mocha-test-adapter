@@ -2,6 +2,54 @@
 
 All notable changes to the "Mocha Test Adapter" extension will be documented in this file.
 
+## [0.0.6] - 2025-10-16
+
+### Fixed
+- Documentation clarification: Configure handlers are accessed via "Configure Test Profiles..." in the dropdown menu, not a gear icon
+- Added configure handlers to all profiles including tag-specific and coverage profiles
+
+## [0.0.5] - 2025-10-16
+
+### Added
+- **Configure Handler**: Configure Mocha options via UI dialog
+  - Timeout setting with validation
+  - Grep pattern for filtering tests by name
+  - Slow threshold configuration
+  - Bail option to stop after first failure
+  - Accessible via "Configure Test Profiles..." in the run profile dropdown
+  - Configuration persists during session and applies to all test runs
+  - Settings affect regular runs, debug sessions, and coverage runs
+  - Available for all profiles including tag-specific profiles
+
+### Technical Details
+- Implemented `configureHandler` on all test run profiles
+- Added `MochaConfig` interface shared across runner and coverage provider
+- Configuration passed as command-line arguments to Mocha
+- Settings validated with input validation callbacks
+
+## [0.0.4] - 2025-10-16
+
+### Added
+- **Test Tags**: Organize and filter tests using tags
+  - Support for `[tag]` and `@tag` syntax in test names
+  - Tag inheritance from parent describe blocks to child tests
+  - Tag-specific run profiles: "Run Unit Tests", "Run Integration Tests", "Run E2E Tests"
+  - Tests with tags only appear under their matching profile (e.g., `@unit` tests only run in "Run Unit Tests")
+  - Prevents accidental execution of slow tests during unit test runs
+- **Improved Test Output**: Changed to spec reporter for clean, formatted terminal output
+  - No more raw JSON in Test Results terminal
+  - Clean checkmarks and crosses for pass/fail
+  - Human-readable test output with proper indentation
+  - Still parses JSON in background for accurate test status
+
+### Technical Details
+- Implemented tag extraction from test names using regex patterns
+- Created `TestTag` objects for filtering and organization
+- Modified test runner to use spec reporter for display + json reporter for parsing
+- Tests now run twice sequentially for optimal UX and accurate results
+- Added `collectTestsWithTag()` to recursively filter tests by tag
+- Added `countTests()` for accurate test counting in logging
+
 ## [0.0.3] - 2025-10-16
 
 ### Added

@@ -14,6 +14,13 @@ interface TestData {
   line?: number;
 }
 
+interface MochaConfig {
+  timeout: number;
+  grep?: string;
+  slow: number;
+  bail: boolean;
+}
+
 export class MochaTestController {
   private readonly controller: vscode.TestController;
   private readonly testData = new WeakMap<vscode.TestItem, TestData>();
@@ -21,6 +28,11 @@ export class MochaTestController {
   private readonly runner: TestRunner;
   private readonly coverage: CoverageProvider;
   private fileWatchers: vscode.FileSystemWatcher[] = [];
+  private config: MochaConfig = {
+    timeout: 5000,
+    slow: 75,
+    bail: false,
+  };
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -75,7 +87,7 @@ export class MochaTestController {
   }
 
   private createRunProfiles() {
-    // Create a run profile for running tests
+    // Create a run profile for running ALL tests (no tag filter)
     const runProfile = this.controller.createRunProfile(
       'Run Tests',
       vscode.TestRunProfileKind.Run,
@@ -86,6 +98,11 @@ export class MochaTestController {
       undefined,
       false
     );
+    
+    // Add configure handler for run profile
+    runProfile.configureHandler = () => {
+      this.showConfigurationDialog();
+    };
 
     // Create a debug profile for debugging tests
     const debugProfile = this.controller.createRunProfile(
@@ -98,6 +115,11 @@ export class MochaTestController {
       undefined,
       false
     );
+    
+    // Add configure handler for debug profile
+    debugProfile.configureHandler = () => {
+      this.showConfigurationDialog();
+    };
 
     // Create a coverage profile for running tests with coverage
     const coverageProfile = this.controller.createRunProfile(
@@ -116,7 +138,69 @@ export class MochaTestController {
       return this.coverage.loadDetailedCoverage(testRun, fileCoverage, token);
     };
 
-    this.context.subscriptions.push(runProfile, debugProfile, coverageProfile);
+    // Create tag-specific run profiles
+    const unitTag = new vscode.TestTag('unit');
+    const unitProfile = this.controller.createRunProfile(
+      'Run Unit Tests',
+      vscode.TestRunProfileKind.Run,
+      async (request, token) => {
+        await this.runner.runTests(request, token);
+      },
+      false, // Not default
+      unitTag,
+      false
+    );
+
+    const integrationTag = new vscode.TestTag('integration');
+    const integrationProfile = this.controller.createRunProfile(
+      'Run Integration Tests',
+      vscode.TestRunProfileKind.Run,
+      async (request, token) => {
+        await this.runner.runTests(request, token);
+      },
+      false,
+      integrationTag,
+      false
+    );
+
+    const e2eTag = new vscode.TestTag('e2e');
+    const e2eProfile = this.controller.createRunProfile(
+      'Run E2E Tests',
+      vscode.TestRunProfileKind.Run,
+      async (request, token) => {
+        await this.runner.runTests(request, token);
+      },
+      false,
+      e2eTag,
+      false
+    );
+    
+    // Add configure handlers to tag-specific profiles too
+    unitProfile.configureHandler = () => {
+      this.showConfigurationDialog();
+    };
+    
+    integrationProfile.configureHandler = () => {
+      this.showConfigurationDialog();
+    };
+    
+    e2eProfile.configureHandler = () => {
+      this.showConfigurationDialog();
+    };
+    
+    // Add configure handler to coverage profile
+    coverageProfile.configureHandler = () => {
+      this.showConfigurationDialog();
+    };
+
+    this.context.subscriptions.push(
+      runProfile, 
+      debugProfile, 
+      coverageProfile,
+      unitProfile,
+      integrationProfile,
+      e2eProfile
+    );
   }
 
   async initialize() {
@@ -240,6 +324,70 @@ export class MochaTestController {
   async refresh() {
     this.controller.items.replace([]);
     await this.discoverAllTests();
+  }
+
+  private async showConfigurationDialog(): Promise<void> {
+    // Show timeout configuration
+    const timeoutInput = await vscode.window.showInputBox({
+      prompt: 'Test timeout (milliseconds)',
+      value: this.config.timeout.toString(),
+      validateInput: (value) => {
+        const num = parseInt(value, 10);
+        return isNaN(num) || num < 0 ? 'Must be a positive number' : null;
+      },
+    });
+
+    if (timeoutInput !== undefined) {
+      this.config.timeout = parseInt(timeoutInput, 10);
+    }
+
+    // Show grep pattern configuration
+    const grepInput = await vscode.window.showInputBox({
+      prompt: 'Grep pattern (filter tests by name, leave empty for all)',
+      value: this.config.grep || '',
+      placeHolder: 'e.g., "should work" or "/pattern/"',
+    });
+
+    if (grepInput !== undefined) {
+      this.config.grep = grepInput || undefined;
+    }
+
+    // Show slow threshold configuration
+    const slowInput = await vscode.window.showInputBox({
+      prompt: 'Slow test threshold (milliseconds)',
+      value: this.config.slow.toString(),
+      validateInput: (value) => {
+        const num = parseInt(value, 10);
+        return isNaN(num) || num < 0 ? 'Must be a positive number' : null;
+      },
+    });
+
+    if (slowInput !== undefined) {
+      this.config.slow = parseInt(slowInput, 10);
+    }
+
+    // Show bail configuration
+    const bailOptions = ['No', 'Yes'];
+    const bailChoice = await vscode.window.showQuickPick(bailOptions, {
+      placeHolder: 'Bail after first test failure?',
+    });
+
+    if (bailChoice !== undefined) {
+      this.config.bail = bailChoice === 'Yes';
+    }
+
+    // Update the runner and coverage provider with new config
+    this.runner.updateConfig(this.config);
+    this.coverage.updateConfig(this.config);
+
+    // Show confirmation
+    vscode.window.showInformationMessage(
+      `Mocha configuration updated: timeout=${this.config.timeout}ms, slow=${this.config.slow}ms, bail=${this.config.bail}${this.config.grep ? `, grep="${this.config.grep}"` : ''}`
+    );
+  }
+
+  getConfig(): MochaConfig {
+    return this.config;
   }
 
   dispose() {
