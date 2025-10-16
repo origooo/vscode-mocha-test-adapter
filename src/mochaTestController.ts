@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { TestDiscovery } from './testDiscovery.js';
 import { TestRunner } from './testRunner.js';
+import { CoverageProvider } from './coverageProvider.js';
 
 enum ItemType {
   File,
@@ -18,6 +19,7 @@ export class MochaTestController {
   private readonly testData = new WeakMap<vscode.TestItem, TestData>();
   private readonly discovery: TestDiscovery;
   private readonly runner: TestRunner;
+  private readonly coverage: CoverageProvider;
   private fileWatchers: vscode.FileSystemWatcher[] = [];
 
   constructor(
@@ -33,6 +35,10 @@ export class MochaTestController {
     );
     this.outputChannel.appendLine('✓ Test controller created');
 
+    this.outputChannel.appendLine('Initializing coverage provider...');
+    this.coverage = new CoverageProvider(this.outputChannel);
+    this.outputChannel.appendLine('✓ Coverage provider initialized');
+
     this.outputChannel.appendLine('Initializing test discovery module...');
     this.discovery = new TestDiscovery(
       this.controller,
@@ -45,7 +51,8 @@ export class MochaTestController {
     this.runner = new TestRunner(
       this.controller,
       this.testData,
-      this.outputChannel
+      this.outputChannel,
+      this.coverage
     );
     this.outputChannel.appendLine('✓ Test runner module initialized');
 
@@ -92,7 +99,24 @@ export class MochaTestController {
       false
     );
 
-    this.context.subscriptions.push(runProfile, debugProfile);
+    // Create a coverage profile for running tests with coverage
+    const coverageProfile = this.controller.createRunProfile(
+      'Run with Coverage',
+      vscode.TestRunProfileKind.Coverage,
+      async (request, token) => {
+        await this.runner.runTestsWithCoverage(request, token);
+      },
+      true,
+      undefined,
+      false
+    );
+
+    // Set up detailed coverage loader
+    coverageProfile.loadDetailedCoverage = async (testRun, fileCoverage, token) => {
+      return this.coverage.loadDetailedCoverage(testRun, fileCoverage, token);
+    };
+
+    this.context.subscriptions.push(runProfile, debugProfile, coverageProfile);
   }
 
   async initialize() {

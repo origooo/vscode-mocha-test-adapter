@@ -2,6 +2,21 @@
 
 All notable changes to the "Mocha Test Adapter" extension will be documented in this file.
 
+## [0.0.2] - 2025-10-16
+
+### Added
+- **Code Coverage Support**: Integrated c8 for comprehensive code coverage
+  - Run tests with coverage via the Coverage profile in Test Explorer
+  - View coverage percentages in the Test Coverage view
+  - See detailed statement and function coverage in editor gutters
+  - Automatic cleanup of temporary coverage files
+- **Improved Test Result Matching**: Fixed test pass/fail detection to properly check the `err` property from Mocha's JSON reporter
+- **Better Logging**: Enhanced output channel logging to show test result details and coverage information
+
+### Fixed
+- Test results now correctly display pass/fail status in VS Code UI
+- Fixed test matching logic to properly build full test paths for accurate result association
+
 ## [0.0.1] - 2025-10-16
 
 ### Added
@@ -16,6 +31,7 @@ All notable changes to the "Mocha Test Adapter" extension will be documented in 
 - Support for nested `describe` blocks (test suites)
 - TypeScript and JavaScript test file support
 - Mocha test framework integration
+- Yarn 4 Plug'n'Play (PnP) support
 
 ### Technical Details
 - Built with TypeScript using ESM modules
@@ -27,7 +43,6 @@ All notable changes to the "Mocha Test Adapter" extension will be documented in 
 ## Future Enhancements
 
 Potential features for future releases:
-- Code coverage support
 - Test configuration UI
 - Support for `.mocharc.json` configuration files
 - Custom Mocha reporter options

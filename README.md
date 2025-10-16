@@ -8,9 +8,11 @@ A VS Code extension that provides Mocha test integration using the native Testin
 - **Native Testing UI**: Uses VS Code's built-in Testing API (not the old Test Explorer)
 - **Run Individual Tests**: Execute single tests, test suites, or entire files
 - **Debug Support**: Full debugging with breakpoints and source maps
+- **Code Coverage**: Built-in coverage support with detailed statement and branch coverage
 - **Real-time Updates**: Watches for file changes and updates tests automatically
 - **Nested Suites**: Properly handles nested `describe` blocks
 - **TypeScript & JavaScript**: Supports both TS and JS test files
+- **Yarn PnP Support**: Works with Yarn 2+ Plug'n'Play
 
 ## Quick Start
 
@@ -40,6 +42,19 @@ Click the debug icon (🐛) instead of play:
 - Set breakpoints in your test code
 - Step through test execution
 - Inspect variables in the Debug Console
+
+### Code Coverage
+
+Run tests with coverage to see which parts of your code are tested:
+
+1. **Run with Coverage**: Click the **Coverage** button (🔬) in the Testing view instead of Run
+2. **View Coverage**: After tests complete, coverage will be displayed:
+   - **Editor gutters**: Green/red highlighting shows covered/uncovered lines
+   - **Test Coverage view**: Shows coverage percentages per file
+   - **Detailed view**: Expand files to see statement and function coverage details
+3. **Coverage Files**: Temporary coverage data is automatically cleaned up after viewing
+
+The extension uses [c8](https://github.com/bcoe/c8) for coverage collection, which provides accurate coverage for both JavaScript and TypeScript with full ESM support.
 
 ### Manual Refresh
 

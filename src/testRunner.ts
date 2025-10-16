@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { spawn } from 'child_process';
 import * as path from 'path';
+import { CoverageProvider } from './coverageProvider.js';
 
 enum ItemType {
   File,
@@ -17,7 +18,8 @@ export class TestRunner {
   constructor(
     private readonly controller: vscode.TestController,
     private readonly testData: WeakMap<vscode.TestItem, TestData>,
-    private readonly outputChannel: vscode.OutputChannel
+    private readonly outputChannel: vscode.OutputChannel,
+    private readonly coverage?: CoverageProvider
   ) {}
 
   /**
@@ -214,6 +216,210 @@ export class TestRunner {
     }
 
     run.end();
+  }
+
+  async runTestsWithCoverage(
+    request: vscode.TestRunRequest,
+    token: vscode.CancellationToken
+  ): Promise<void> {
+    if (!this.coverage) {
+      this.outputChannel.appendLine('❌ Coverage provider not available');
+      return;
+    }
+
+    this.outputChannel.appendLine('');
+    this.outputChannel.appendLine('='.repeat(60));
+    this.outputChannel.appendLine('Starting test run with coverage...');
+    this.outputChannel.appendLine('='.repeat(60));
+
+    const run = this.controller.createTestRun(request);
+    const queue: vscode.TestItem[] = [];
+
+    // Collect tests to run
+    if (request.include) {
+      request.include.forEach((test) => queue.push(test));
+      this.outputChannel.appendLine(
+        `Running ${request.include.length} specific test(s) with coverage`
+      );
+    } else {
+      this.controller.items.forEach((test) => queue.push(test));
+      this.outputChannel.appendLine('Running all tests with coverage');
+    }
+
+    try {
+      // Run each test file with coverage
+      for (const test of queue) {
+        if (token.isCancellationRequested) {
+          this.outputChannel.appendLine('Test run cancelled');
+          run.skipped(test);
+          continue;
+        }
+
+        if (request.exclude?.includes(test)) {
+          continue;
+        }
+
+        await this.runTestWithCoverage(test, run, token);
+      }
+
+      this.outputChannel.appendLine('✓ Test run with coverage completed');
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.outputChannel.appendLine(`❌ Coverage run failed: ${errorMessage}`);
+      if (error instanceof Error && error.stack) {
+        this.outputChannel.appendLine(error.stack);
+      }
+    } finally {
+      run.end();
+      this.outputChannel.appendLine('='.repeat(60));
+    }
+  }
+
+  private async runTestWithCoverage(
+    test: vscode.TestItem,
+    run: vscode.TestRun,
+    token: vscode.CancellationToken
+  ): Promise<void> {
+    const data = this.testData.get(test);
+    if (!data) {
+      this.outputChannel.appendLine(`⚠ No test data found for: ${test.label}`);
+      return;
+    }
+
+    switch (data.type) {
+      case ItemType.File:
+        this.outputChannel.appendLine(`Running file with coverage: ${test.label}`);
+        await this.runFileTestsWithCoverage(test, run, token);
+        break;
+      case ItemType.Suite:
+        this.outputChannel.appendLine(`Running suite with coverage: ${test.label}`);
+        // Run all children in the suite
+        for (const [, child] of test.children) {
+          await this.runTestWithCoverage(child, run, token);
+        }
+        break;
+      case ItemType.Test:
+        // For individual tests, run the parent file with coverage
+        this.outputChannel.appendLine(`Running test with coverage: ${test.label}`);
+        let fileItem: vscode.TestItem | undefined = test;
+        while (fileItem && this.testData.get(fileItem)?.type !== ItemType.File) {
+          fileItem = fileItem.parent;
+        }
+        if (fileItem) {
+          await this.runFileTestsWithCoverage(fileItem, run, token);
+        }
+        break;
+    }
+  }
+
+  private async runFileTestsWithCoverage(
+    fileItem: vscode.TestItem,
+    run: vscode.TestRun,
+    token: vscode.CancellationToken
+  ): Promise<void> {
+    if (!fileItem.uri || !this.coverage) {
+      const errorMsg = 'Test file URI or coverage provider is missing';
+      this.outputChannel.appendLine(`❌ ${errorMsg}`);
+      run.errored(fileItem, new vscode.TestMessage(errorMsg));
+      return;
+    }
+
+    const testFilePath = fileItem.uri.fsPath;
+    this.outputChannel.appendLine(`  File path: ${testFilePath}`);
+
+    // Get the workspace folder
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileItem.uri);
+    if (!workspaceFolder) {
+      const errorMsg = 'Could not determine workspace folder';
+      this.outputChannel.appendLine(`❌ ${errorMsg}`);
+      run.errored(fileItem, new vscode.TestMessage(errorMsg));
+      return;
+    }
+
+    const workspacePath = workspaceFolder.uri.fsPath;
+    this.outputChannel.appendLine(`  Workspace: ${workspacePath}`);
+
+    // Check for PnP
+    const pnpCjsPath = path.join(workspacePath, '.pnp.cjs');
+    const nodeArgs: string[] = [];
+
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(pnpCjsPath));
+      nodeArgs.push('--require', pnpCjsPath);
+      this.outputChannel.appendLine(`  ✓ Found .pnp.cjs, will use PnP`);
+    } catch {
+      this.outputChannel.appendLine(`  No PnP detected`);
+    }
+
+    // Get Mocha path
+    const isPnP = nodeArgs.some(arg => arg.includes('.pnp.cjs'));
+    const mochaPath = await this.getMochaPath(workspacePath, isPnP);
+    this.outputChannel.appendLine(`  ✓ Mocha path: ${mochaPath}`);
+
+    // Track test results
+    const testResults = new Map<
+      string,
+      { passed: boolean; message?: string; duration?: number }
+    >();
+
+    try {
+      // Run with coverage - this returns the stdout containing Mocha JSON results
+      const stdout = await this.coverage.runTestsWithCoverage(
+        mochaPath,
+        testFilePath,
+        workspacePath,
+        run,
+        nodeArgs,
+        isPnP,
+        token
+      );
+
+      // Parse Mocha test results from stdout
+      try {
+        const results = JSON.parse(stdout);
+        this.outputChannel.appendLine(
+          `  Parsed ${results.tests?.length || 0} test result(s)`
+        );
+
+        if (results.tests) {
+          for (const test of results.tests) {
+            // A test passes if err is null/undefined or an empty object
+            const passed = !test.err || (typeof test.err === 'object' && Object.keys(test.err).length === 0);
+            this.outputChannel.appendLine(
+              `    Test: "${test.fullTitle}" - Passed: ${passed}, Err: ${test.err ? JSON.stringify(test.err) : 'null'}`
+            );
+            testResults.set(test.fullTitle, {
+              passed: passed,
+              message: test.err?.message,
+              duration: test.duration,
+            });
+          }
+        }
+      } catch (parseError) {
+        this.outputChannel.appendLine(
+          `  ⚠ Failed to parse test results JSON`
+        );
+      }
+
+      // Update test results
+      this.outputChannel.appendLine(
+        `  Updating test results (${testResults.size} test(s))...`
+      );
+      this.updateTestResults(fileItem, run, testResults);
+      this.outputChannel.appendLine('  ✓ Test results updated');
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.outputChannel.appendLine(`  ❌ Error running coverage: ${errorMessage}`);
+      if (error instanceof Error && error.stack) {
+        this.outputChannel.appendLine(error.stack);
+      }
+      run.errored(
+        fileItem,
+        new vscode.TestMessage(`Error running coverage: ${errorMessage}`)
+      );
+    }
   }
 
   private getTestArgs(request: vscode.TestRunRequest): string[] {
