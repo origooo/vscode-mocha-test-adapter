@@ -14,7 +14,7 @@ A VS Code extension that provides Mocha test integration using the native Testin
 - **Enhanced Error Messages**: Shows stack traces with clickable file links and diffs for assertion failures
 - **Test Tags**: Organize and filter tests by tags (unit, integration, e2e, etc.)
 - **Configuration File Support**: Automatically loads `.mocharc.js`, `.mocharc.json`, `.mocharc.yaml`, or `package.json` config
-- **UI Configuration**: Configure Mocha timeout, grep patterns, slow threshold, and bail via UI dialogs
+  - Hot-reload: Config changes automatically reload and rediscover tests (500ms debounce)
 - **Continuous Run Mode**: Auto-run tests on save with smart source-to-test file mapping
 - **Real-time Updates**: Watches for file changes and updates tests automatically
 - **Nested Suites**: Properly handles nested `describe` blocks
@@ -254,6 +254,12 @@ module.exports = {
 1. Command-line arguments (not applicable in VS Code context)
 2. `.mocharc.js` → `.mocharc.cjs` → `.mocharc.yaml` → `.mocharc.yml` → `.mocharc.jsonc` → `.mocharc.json` → `package.json`
 3. Extension defaults
+
+**Hot-Reload:**
+- Configuration files are automatically watched for changes
+- When a config file changes, it's reloaded and tests are rediscovered (500ms debounce)
+- If a config file is deleted, defaults are restored
+- No extension reload needed!
 
 #### Respected Configuration Properties
 

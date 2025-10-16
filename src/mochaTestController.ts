@@ -380,7 +380,79 @@ export class MochaTestController {
         this.context.subscriptions.push(watcher);
         this.outputChannel.appendLine(`  ✓ Watcher created for pattern: ${pattern}`);
       }
+      
+      // Watch for config file changes
+      await this.setupConfigFileWatcher(folder);
     }
+  }
+
+  private async setupConfigFileWatcher(workspaceFolder: vscode.WorkspaceFolder) {
+    this.outputChannel.appendLine('  Setting up config file watcher...');
+    
+    // Watch all possible config files
+    const configFiles = [
+      '.mocharc.js',
+      '.mocharc.cjs',
+      '.mocharc.yaml',
+      '.mocharc.yml',
+      '.mocharc.jsonc',
+      '.mocharc.json',
+      'package.json' // Only relevant if it has mocha config
+    ];
+
+    let debounceTimer: NodeJS.Timeout | undefined;
+
+    for (const configFile of configFiles) {
+      const pattern = new vscode.RelativePattern(workspaceFolder, configFile);
+      const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+
+      const reloadConfig = () => {
+        // Debounce: wait 500ms after last change before reloading
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+        }
+
+        debounceTimer = setTimeout(async () => {
+          this.outputChannel.appendLine(`  Config file changed: ${configFile}`);
+          this.outputChannel.appendLine('  Reloading configuration...');
+          
+          await this.loadMochaConfig();
+          
+          // Rediscover tests with new config (e.g., new extensions or ignore patterns)
+          this.outputChannel.appendLine('  Rediscovering tests with new configuration...');
+          this.controller.items.replace([]); // Clear all tests
+          await this.discoverAllTests();
+          
+          this.outputChannel.appendLine('  ✓ Configuration reloaded and tests rediscovered');
+        }, 500); // 500ms debounce
+      };
+
+      watcher.onDidChange(reloadConfig);
+      watcher.onDidCreate(reloadConfig);
+      watcher.onDidDelete(() => {
+        this.outputChannel.appendLine(`  Config file deleted: ${configFile}`);
+        this.outputChannel.appendLine('  Reverting to default configuration...');
+        
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+        }
+
+        debounceTimer = setTimeout(async () => {
+          await this.loadMochaConfig(); // Will fall back to defaults if no config found
+          
+          this.outputChannel.appendLine('  Rediscovering tests with default configuration...');
+          this.controller.items.replace([]);
+          await this.discoverAllTests();
+          
+          this.outputChannel.appendLine('  ✓ Reverted to defaults and tests rediscovered');
+        }, 500);
+      });
+
+      this.fileWatchers.push(watcher);
+      this.context.subscriptions.push(watcher);
+    }
+    
+    this.outputChannel.appendLine(`  ✓ Config file watchers created for ${configFiles.length} file patterns`);
   }
 
   private async discoverAllTests() {

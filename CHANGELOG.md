@@ -29,6 +29,12 @@ All notable changes to the "Mocha Test Adapter" extension will be documented in 
   - Patterns added to VS Code's `findFiles()` exclude parameter
   - Combined with default `**/node_modules/**` exclusion
   - Example: `ignore: ['**/*.helper.js', '**/fixtures/**']`
+- **Configuration Hot-Reload**: Automatically reload config when files change
+  - Watches all config files (`.mocharc.*`, `package.json`)
+  - 500ms debounce to prevent excessive reloads during rapid edits
+  - Automatically rediscovers tests when config changes (e.g., new extensions, ignore patterns)
+  - Reverts to defaults if config file is deleted
+  - No extension reload needed!
 
 ### Changed
 - **Documentation Reorganization**: Updated CONFIGURATION.md with property relevance categories
@@ -38,6 +44,13 @@ All notable changes to the "Mocha Test Adapter" extension will be documented in 
   - Clear rationale for each category explaining VS Code Test Explorer integration
 - **README.md**: Updated configuration documentation to reflect file-only configuration approach
 
+### Fixed
+- **JavaScript Config Loading**: Fixed `.mocharc.js` and `.mocharc.cjs` loading in ESM contexts
+  - Use `createRequire()` from Node.js `module` to properly load CommonJS config files
+  - `.cjs` files now use `require()` directly (no dynamic import attempt)
+  - `.js` files try ESM import first, fall back to require
+  - Helpful error messages when config syntax conflicts with package.json `"type": "module"`
+
 ### Technical Details
 - Updated `MochaConfig` interface in all 3 modules (mochaTestController, testRunner, coverageProvider)
 - Added retries, require, ignore properties with proper types
@@ -45,6 +58,8 @@ All notable changes to the "Mocha Test Adapter" extension will be documented in 
 - Test runner builds Mocha arguments with new flags in both `runFileTests()` and `debugTests()`
 - Test discovery filters files using ignore patterns in `discoverAllTests()` method
 - Comprehensive logging when config properties are loaded
+- Config file watchers created in `setupConfigFileWatcher()` with shared debounce timer
+- Import `createRequire` from `module` for proper CommonJS loading in ESM extension context
 
 ## [0.0.10] - 2025-10-16
 
