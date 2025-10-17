@@ -3,6 +3,7 @@ import { TestDiscovery } from './testDiscovery.js';
 import { TestRunner } from './testRunner.js';
 import { CoverageProvider } from './coverageProvider.js';
 import { ConfigLoader } from './configLoader.js';
+import { DiagnosticsProvider } from './diagnosticsProvider.js';
 
 enum ItemType {
   File,
@@ -32,6 +33,7 @@ export class MochaTestController {
   private readonly discovery: TestDiscovery;
   private readonly runner: TestRunner;
   private readonly coverage: CoverageProvider;
+  private readonly diagnostics: DiagnosticsProvider;
   private readonly configLoader: ConfigLoader;
   private fileWatchers: vscode.FileSystemWatcher[] = [];
   private config: MochaConfig = {
@@ -62,6 +64,10 @@ export class MochaTestController {
     this.coverage = new CoverageProvider(this.outputChannel);
     this.outputChannel.appendLine('✓ Coverage provider initialized');
 
+    this.outputChannel.appendLine('Initializing diagnostics provider...');
+    this.diagnostics = new DiagnosticsProvider(this.outputChannel);
+    this.outputChannel.appendLine('✓ Diagnostics provider initialized');
+
     this.outputChannel.appendLine('Initializing test discovery module...');
     this.discovery = new TestDiscovery(
       this.controller,
@@ -75,6 +81,7 @@ export class MochaTestController {
       this.controller,
       this.testData,
       this.outputChannel,
+      this.diagnostics,
       this.coverage
     );
     this.outputChannel.appendLine('✓ Test runner module initialized');
@@ -548,5 +555,6 @@ export class MochaTestController {
   dispose() {
     this.controller.dispose();
     this.fileWatchers.forEach((w) => w.dispose());
+    this.diagnostics.dispose();
   }
 }

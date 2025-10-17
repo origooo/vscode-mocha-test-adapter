@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { spawn } from 'child_process';
 import * as path from 'path';
 import { CoverageProvider } from './coverageProvider.js';
+import { DiagnosticsProvider } from './diagnosticsProvider.js';
 
 enum ItemType {
   File,
@@ -37,6 +38,7 @@ export class TestRunner {
     private readonly controller: vscode.TestController,
     private readonly testData: WeakMap<vscode.TestItem, TestData>,
     private readonly outputChannel: vscode.OutputChannel,
+    private readonly diagnostics: DiagnosticsProvider,
     private readonly coverage?: CoverageProvider
   ) {}
 
@@ -151,10 +153,15 @@ export class TestRunner {
     request: vscode.TestRunRequest,
     token: vscode.CancellationToken
   ): Promise<void> {
+    this.outputChannel.appendLine(`[runTests] Called with continuous=${request.continuous}`);
+    
     // Handle continuous run mode
     if (request.continuous) {
       return this.runContinuousTests(request, token);
     }
+
+    // Clear previous test diagnostics at the start of a new run
+    this.diagnostics.clearAllDiagnostics();
 
     this.outputChannel.appendLine('');
     this.outputChannel.appendLine('='.repeat(60));
@@ -406,6 +413,7 @@ export class TestRunner {
 
     // Watch for file changes (async handler)
     const fileWatcher = vscode.workspace.onDidSaveTextDocument((doc) => {
+      this.outputChannel.appendLine(`[ContinuousRun] File saved: ${doc.uri.fsPath}`);
       void handleFileChange(doc.uri);
     });
 
@@ -990,7 +998,7 @@ export class TestRunner {
           cwd: workspacePath,
           env: {
             ...process.env,
-            NODE_OPTIONS: nodeArgs.length > 0 ? nodeArgs.join(' ') : undefined,
+            // Don't set NODE_OPTIONS since we're passing nodeArgs directly in the command
           },
         });
 
@@ -1029,7 +1037,7 @@ export class TestRunner {
           cwd: workspacePath,
           env: {
             ...process.env,
-            NODE_OPTIONS: nodeArgs.length > 0 ? nodeArgs.join(' ') : undefined,
+            // Don't set NODE_OPTIONS since we're passing nodeArgs directly in the command
           },
         });
 
@@ -1055,7 +1063,32 @@ export class TestRunner {
 
           // Parse JSON output
           try {
-            const results = JSON.parse(stdout);
+            this.outputChannel.appendLine(`  Raw stdout length: ${stdout.length} characters`);
+            
+            // Skip logging if stdout is very long (just log first and last parts)
+            if (stdout.length > 1000) {
+              this.outputChannel.appendLine(`  First 200 chars: ${stdout.substring(0, 200)}`);
+              this.outputChannel.appendLine(`  Last 200 chars: ...${stdout.substring(stdout.length - 200)}`);
+            } else {
+              this.outputChannel.appendLine(`  Full stdout: ${stdout}`);
+            }
+            
+            // Check for stderr
+            if (stderr) {
+              this.outputChannel.appendLine(`  stderr present: ${stderr.length} characters`);
+            }
+            
+            // Try to extract JSON from stdout (it might be mixed with other output)
+            let jsonStr = stdout;
+            
+            // If there's non-JSON content before the JSON, try to find the JSON part
+            const jsonStartMatch = stdout.match(/^\s*\{/m);
+            if (jsonStartMatch && jsonStartMatch.index) {
+              jsonStr = stdout.substring(jsonStartMatch.index);
+              this.outputChannel.appendLine(`  Extracted JSON starting at position ${jsonStartMatch.index}`);
+            }
+            
+            const results = JSON.parse(jsonStr);
             
             // Log the full JSON structure for debugging
             this.outputChannel.appendLine('  JSON structure:');
@@ -1113,8 +1146,10 @@ export class TestRunner {
             resolve();
           } catch (parseError) {
             this.outputChannel.appendLine(
-              `  ⚠ Failed to parse JSON output, using exit code`
+              `  ⚠ Failed to parse JSON output: ${parseError instanceof Error ? parseError.message : String(parseError)}`
             );
+            this.outputChannel.appendLine(`  stdout: ${stdout.substring(0, 1000)}`);
+            this.outputChannel.appendLine(`  stderr: ${stderr}`);
             // If JSON parsing fails, just check exit code
             if (code === 0) {
               // Mark all tests as passed (couldn't parse details)
@@ -1394,6 +1429,14 @@ export class TestRunner {
     }>
   ): void {
     this.updateChildResults(fileItem, run, results);
+    
+    // After processing all results, check if all tests passed
+    // If so, clear diagnostics for this file
+    const allPassed = Array.from(results.values()).every(r => r.passed || r.pending);
+    if (allPassed && fileItem.uri) {
+      this.outputChannel.appendLine(`[TestRunner] All tests passed for ${fileItem.uri.fsPath}, clearing diagnostics`);
+      this.diagnostics.clearFileDignostics(fileItem.uri);
+    }
   }
 
   private updateChildResults(
@@ -1410,6 +1453,7 @@ export class TestRunner {
     }>
   ): void {
     const data = this.testData.get(item);
+    this.outputChannel.appendLine(`[updateChildResults] Processing item: "${item.label}", type: ${data?.type === ItemType.File ? 'File' : data?.type === ItemType.Suite ? 'Suite' : data?.type === ItemType.Test ? 'Test' : 'Unknown'}, children: ${item.children.size}`);
 
     if (data?.type === ItemType.Test) {
       // Build the full title path for this test item
@@ -1430,21 +1474,41 @@ export class TestRunner {
             run.skipped(item);
           } else if (result.passed) {
             run.passed(item, result.duration);
+            // Note: We don't clear diagnostics here per-test since other tests might have failed
+            // Diagnostics are cleared at the start of each test run instead
           } else {
             // Create enhanced test message with location and diff
             const testMessage = this.createTestMessage(result, item);
             run.failed(item, testMessage, result.duration);
+            
+            // Add diagnostic entry to Problems panel
+            if (item.uri) {
+              const line = this.testData.get(item)?.line ?? 0;
+              this.outputChannel.appendLine(`[TestRunner] Creating diagnostic for test: ${item.label}`);
+              this.outputChannel.appendLine(`[TestRunner]   URI: ${item.uri.toString()}`);
+              this.outputChannel.appendLine(`[TestRunner]   Line: ${line}`);
+              this.diagnostics.addTestFailure(
+                item.uri,
+                item.label,
+                result.message || 'Test failed',
+                line,
+                result.stack
+              );
+            } else {
+              this.outputChannel.appendLine(`[TestRunner] WARNING: No URI for test item: ${item.label}`);
+            }
           }
-          return;
+          return; // Found and processed this test, no need to check children
         }
       }
       
       this.outputChannel.appendLine(
         `      ⚠ No matching result found for: "${fullTitlePath}"`
       );
+      return; // This is a test item with no match, don't recurse (tests have no children)
     }
 
-    // Recursively update children
+    // For Files and Suites: recursively update children
     for (const [, child] of item.children) {
       this.updateChildResults(child, run, results);
     }

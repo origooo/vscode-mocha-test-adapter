@@ -2,6 +2,17 @@
 
 All notable changes to the "Mocha Test Adapter" extension will be documented in this file.
 
+## [0.0.12] - 2025-01-XX
+
+### Added
+- **Error Diagnostics Integration**: Failed tests now appear in the Problems panel
+  - Test failures show up alongside ESLint, TypeScript, and other diagnostics
+  - Click on problem entries to jump to the failing test
+  - Diagnostics include test name and error message
+  - Automatically cleared at the start of each test run
+  - Cleared for specific files when all tests pass
+  - Provides unified view of all code issues in one place
+
 ## [0.0.11] - 2025-01-XX
 
 ### Removed
