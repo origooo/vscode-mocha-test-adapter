@@ -2,18 +2,42 @@
 
 All notable changes to the "Mocha Test Adapter" extension will be documented in this file.
 
-## [0.0.12] - 2025-01-XX
+## [0.0.12] - 2025-10-17
 
 ### Added
-- **Error Diagnostics Integration**: Failed tests now appear in the Problems panel
+- **Error Diagnostics Integration**: Failed tests now appear in the Problems panel (⇧⌘M)
   - Test failures show up alongside ESLint, TypeScript, and other diagnostics
-  - Click on problem entries to jump to the failing test
-  - Diagnostics include test name and error message
+  - Click on problem entries to jump directly to the failing test
+  - Diagnostics include test name and error message with source location
   - Automatically cleared at the start of each test run
-  - Cleared for specific files when all tests pass
+  - Cleared for specific files when all tests in that file pass
   - Provides unified view of all code issues in one place
+  - Perfect for TDD workflows - treat test failures as "problems to fix"
 
-## [0.0.11] - 2025-01-XX
+### Fixed
+- **Test Discovery for `.skip()` Modifiers**: Properly hide tests and suites with `.skip()`
+  - Fixed `describe.skip()` to hide entire suite and all nested tests
+  - Fixed `it.skip()` to hide individual tests
+  - Updated regex patterns to capture `.skip()` and `.only()` modifiers
+  - Skipped tests are completely excluded from Test Explorer during discovery
+  - Matches Mocha's CLI behavior where skipped tests don't appear in output
+  - Tests inside `describe.skip()` blocks are also properly hidden
+- **Duplicate Node Arguments**: Fixed TypeScript compilation errors in test execution
+  - Removed duplicate `NODE_OPTIONS` environment variable that was causing issues
+  - Node arguments (`--require`, `--experimental-loader`) now passed only once in command args
+  - Fixes "Cannot find name 'describe'" and similar TypeScript errors
+  - Improves reliability of PnP loader and TypeScript transpilation
+
+### Technical Details
+- Created `DiagnosticsProvider` class to manage VS Code diagnostic collection
+- Added `addTestFailure()` method with stack trace parsing for precise location
+- Added `clearFileDignostics()` to clear diagnostics when tests pass
+- Integrated diagnostics into test result update flow
+- Updated test discovery regex to capture modifiers: `/(describe|context)(\.(skip|only))?\s*\(/`
+- Added indentation-based tracking for skipped describe blocks
+- Fixed node argument passing to prevent duplication in spawn() calls
+
+## [0.0.11] - 2025-10-16
 
 ### Removed
 - **UI Configuration Handler**: Removed "Configure Test Profiles" menu and configuration dialogs
