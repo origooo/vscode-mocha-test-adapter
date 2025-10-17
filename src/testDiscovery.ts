@@ -128,8 +128,10 @@ export class TestDiscovery {
 
     // Regular expressions to match Mocha test structures
     // Now includes .skip() and .only() variants
-    const describeRegex = /^\s*(describe|context)(\.(skip|only))?\s*\(\s*['"`]([^'"`]+)['"`]/;
-    const itRegex = /^\s*it(\.(skip|only))?\s*\(\s*['"`]([^'"`]+)['"`]/;
+    // Updated to handle quotes inside test descriptions by using alternation
+    // for each quote type (double, single, backtick)
+    const describeRegex = /^\s*(describe|context)(\.(skip|only))?\s*\(\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`)/;
+    const itRegex = /^\s*it(\.(skip|only))?\s*\(\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`)/;
     const suiteEndRegex = /^\s*\}\s*\)/;
 
     let currentIndent = 0;
@@ -148,7 +150,9 @@ export class TestDiscovery {
       const describeMatch = line.match(describeRegex);
       if (describeMatch) {
         const modifier = describeMatch[2]; // Will be '.skip' or '.only' or undefined
-        const suiteName = describeMatch[4]; // Suite name is now in capture group 4
+        // Suite name is in group 4, 5, or 6 depending on which quote type matched
+        // (shifted by 1 because of (describe|context) capture group)
+        const suiteName = describeMatch[4] || describeMatch[5] || describeMatch[6];
         const isSkipped = modifier === '.skip';
         const indent = line.search(/\S/);
 
@@ -208,8 +212,9 @@ export class TestDiscovery {
       // Match it() test cases
       const itMatch = line.match(itRegex);
       if (itMatch) {
-        const modifier = itMatch[1]; // Will be '.skip' or '.only' or undefined
-        const testName = itMatch[3]; // Test name is now in capture group 3
+        const modifier = itMatch[2]; // Will be '.skip' or '.only' or undefined
+        // Test name is in group 3, 4, or 5 depending on which quote type matched
+        const testName = itMatch[3] || itMatch[4] || itMatch[5];
         const isSkipped = modifier === '.skip';
         const indent = line.search(/\S/);
         

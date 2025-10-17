@@ -2,6 +2,24 @@
 
 All notable changes to the "Mocha Test Adapter" extension will be documented in this file.
 
+## [0.0.16] - 2025-10-17
+
+### Fixed
+- **Test Discovery with Quotes**: Fixed regex pattern to handle quotes inside test descriptions
+  - Now correctly discovers tests with single quotes in double-quoted strings (e.g., `it("test 'quoted' text", ...)`)
+  - Now correctly discovers tests with double quotes in single-quoted strings (e.g., `it('test "quoted" text', ...)`)
+  - Supports all three quote types: double quotes (`"`), single quotes (`'`), and backticks (`` ` ``)
+  - Fixed backtick-quoted tests not appearing (capture group index was off by 1 for `describe`)
+  - Tests that were running but not appearing in Test Explorer now show up correctly
+  - Uses alternation pattern to match each quote type separately: `(?:"([^"]*)"|'([^']*)'|`([^`]*)`)`
+
+### Technical Details
+- Updated `describeRegex` and `itRegex` patterns in `testDiscovery.ts`
+- Previous pattern used `[^'"`]+` which stopped at first quote character
+- New pattern uses alternation to handle each quote type independently
+- Capture groups for `describe`: test name in group 4, 5, or 6 (due to `(describe|context)` group)
+- Capture groups for `it`: test name in group 3, 4, or 5
+
 ## [0.0.15] - 2025-10-17
 
 ### Added

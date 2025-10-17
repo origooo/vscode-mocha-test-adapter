@@ -2,7 +2,7 @@
   "name": "vscode-mocha-test-adapter",
   "displayName": "Mocha Test Adapter",
   "description": "Mocha test adapter for VS Code using the native Testing API with coverage, continuous run, and diagnostics",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "publisher": "origooo",
   "license": "MIT",
   "type": "module",
