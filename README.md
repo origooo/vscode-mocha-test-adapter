@@ -1,44 +1,43 @@
 # Mocha Test Adapter for VS Code
 
-A VS Code extension that provides Mocha test integration using the native Testing API.
+A comprehensive Mocha test adapter that integrates seamlessly with VS Code's native Testing API. Run, debug, and get coverage for your Mocha tests with a rich, feature-packed experience.
 
-## Features
+![VS Code Testing View](https://img.shields.io/badge/VS%20Code-Testing%20API-blue)
+![Mocha](https://img.shields.io/badge/Mocha-10.x-8D6748)
+![Coverage](https://img.shields.io/badge/Coverage-c8-green)
 
-- **Automatic Test Discovery**: Finds `.test.ts`, `.spec.ts`, `.test.js`, and `.spec.js` files automatically
-- **Native Testing UI**: Uses VS Code's built-in Testing API (not the old Test Explorer)
-- **Run Individual Tests**: Execute single tests, test suites, or entire files
-- **Context Menu Actions**: Right-click tests for quick actions (Go to Test, Copy Name, Run Only This, etc.)
-- **Debug Support**: Full debugging with breakpoints and source maps
-- **Code Coverage**: Built-in coverage support with detailed statement and branch coverage
-- **Enhanced Test Output**: Color-coded results (✓ pass, ✗ fail, ○ skip), test durations, and summary statistics
-- **Enhanced Error Messages**: Shows stack traces with clickable file links and diffs for assertion failures
-- **Problems Panel Integration**: Failed tests appear in the Problems panel (⇧⌘M) alongside ESLint and TypeScript errors
-- **Test Tags**: Organize and filter tests by tags (unit, integration, e2e, etc.)
-- **Configuration File Support**: Automatically loads `.mocharc.js`, `.mocharc.json`, `.mocharc.yaml`, or `package.json` config
-  - Hot-reload: Config changes automatically reload and rediscover tests (500ms debounce)
-- **Continuous Run Mode**: Auto-run tests on save with smart source-to-test file mapping
-- **Real-time Updates**: Watches for file changes and updates tests automatically
-- **Nested Suites**: Properly handles nested `describe` blocks
-- **TypeScript & JavaScript**: Supports both TS and JS test files
-- **Yarn PnP Support**: Works with Yarn 2+ Plug'n'Play
+## ✨ Key Features
 
-## Quick Start
+### 🚀 Core Testing
+- **Native Testing UI** - Uses VS Code's built-in Testing API for a familiar experience
+- **Automatic Discovery** - Finds `.test.{js,ts}` and `.spec.{js,ts}` files automatically
+- **Run & Debug** - Execute and debug individual tests, suites, or entire files
+- **Nested Suites** - Full support for nested `describe` blocks with proper hierarchy
+- **TypeScript & JavaScript** - Works with both TS and JS test files seamlessly
 
-1. Open a workspace containing Mocha tests
-2. Open the Testing view (click the beaker 🧪 icon in the Activity Bar)
-3. Tests will be automatically discovered
-4. Click the ▶️ play button to run tests
-5. Click the 🐛 debug icon to debug tests
+### 📊 Enhanced Output & Diagnostics
+- **Beautiful Test Output** - Color-coded results with ✓ pass, ✗ fail, ○ skip indicators
+- **Test Timings** - Shows duration for each test with slow test warnings (⚠ slow)
+- **Detailed Summaries** - Clear statistics showing passed, failed, skipped, and slow tests
+- **Nested Suite Formatting** - Tests grouped under parent suites with proper indentation
+- **Failure Grouping** - Failed tests collected at the end with detailed error info
+- **Problems Integration** - Test failures appear in VS Code's Problems panel (⇧⌘M)
+- **Clickable Stack Traces** - Jump directly to failing code from error messages
+- **Diff Viewer** - Shows expected vs actual values for assertion failures
 
-## Requirements
+### 🎯 Advanced Features
+- **Code Coverage** - Built-in coverage with c8, showing statement and branch coverage
+- **Continuous Run** - Auto-run tests on file save with smart source-to-test mapping
+- **Test Tags** - Organize tests with `@unit`, `@integration`, `@e2e` tags
+- **Config File Support** - Loads `.mocharc.{js,json,yaml}` or `package.json` config
+- **Hot Reload** - Config changes auto-reload tests (500ms debounce)
+- **Context Menu** - Right-click actions: Go to Test, Copy Name, Run Only This, Reveal in Explorer
+- **Yarn PnP Support** - Full compatibility with Yarn 2+ Plug'n'Play
 
-- VS Code 1.88.0 or higher
-- Mocha 10.x installed in your workspace
-- c8 10.x installed in your workspace (for coverage support)
+## 📦 Installation
 
-### Installation
-
-In your project, install Mocha and c8 as dev dependencies:
+1. Install the extension from the VS Code Marketplace
+2. Install Mocha and c8 in your project:
 
 ```bash
 npm install --save-dev mocha c8
@@ -46,58 +45,125 @@ npm install --save-dev mocha c8
 yarn add -D mocha c8
 ```
 
-The extension will automatically discover these dependencies in your workspace.
+3. Open the Testing view (🧪 icon in Activity Bar)
+4. Tests will be automatically discovered!
 
-## Usage
+## 🎬 Quick Start
 
 ### Running Tests
 
-- **All tests**: Click the play button at the top of the Testing view
-- **File tests**: Click play next to a test file
-- **Suite tests**: Click play next to a `describe` block  
-- **Single test**: Click play next to an `it` block
+- **All tests**: Click ▶️ at the top of the Testing view
+- **File tests**: Click ▶️ next to a test file
+- **Suite tests**: Click ▶️ next to a `describe` block  
+- **Single test**: Click ▶️ next to an `it` block
 
-### Context Menu Actions
+### Debugging
 
-Right-click on any test in the Testing view for quick actions:
-
-- **Go to Test** (⌘+Click or right-click): Navigate directly to the test's code location
-- **Copy Test Name**: Copy the full hierarchical test name to clipboard (e.g., "Suite > Nested Suite > Test Name")
-- **Run Only This Test**: Run just this specific test in isolation using grep
-- **Reveal in Explorer**: Show the test file in the VS Code file explorer
-
-These actions make it easy to navigate, isolate, and debug specific tests without running the entire suite.
-
-### Debugging Tests
-
-Click the debug icon (🐛) instead of play:
+Click 🐛 instead of ▶️ to debug:
 - Set breakpoints in your test code
-- Step through test execution
-- Inspect variables in the Debug Console
+- Step through execution
+- Inspect variables
 
 ### Code Coverage
 
-Run tests with coverage to see which parts of your code are tested:
+1. Click the **Coverage** button (🔬) in Testing view
+2. View coverage in editor gutters (green/red lines)
+3. Check detailed coverage in Test Coverage view
 
-1. **Run with Coverage**: Click the **Coverage** button (🔬) in the Testing view instead of Run
-2. **View Coverage**: After tests complete, coverage will be displayed:
-   - **Editor gutters**: Green/red highlighting shows covered/uncovered lines
-   - **Test Coverage view**: Shows coverage percentages per file
-   - **Detailed view**: Expand files to see statement and function coverage details
-3. **Coverage Files**: Temporary coverage data is automatically cleaned up after viewing
+### Viewing Output
 
-The extension uses [c8](https://github.com/bcoe/c8) for coverage collection, which provides accurate coverage for both JavaScript and TypeScript with full ESM support.
+Click the terminal icon (�) in Testing panel to see:
+- Formatted test results with suite hierarchy
+- Console.log output from tests
+- Detailed failure information with diffs
 
-### Viewing Test Output
+## 🏷️ Test Tags
 
-When tests run, their output is captured and displayed:
+Organize tests with tags for targeted test runs:
 
-1. **Test Results View**: Click the terminal icon (📺) in the Testing panel to view test output
-2. **Console Logs**: Any `console.log()` statements in your tests will appear in the output
-3. **Mocha Output**: Test execution details and summaries are displayed
-4. **ANSI Colors**: Colored output is preserved for better readability
+```javascript
+describe('User API @integration @api', () => {
+  it('should create user @smoke', () => {
+    // Test code
+  });
+});
+```
 
-### Enhanced Error Messages
+Use tag-specific profiles (Unit, Integration, E2E) to run filtered test subsets.
+
+## ⚙️ Configuration
+
+The extension respects your Mocha configuration files:
+
+- `.mocharc.js`, `.mocharc.cjs`
+- `.mocharc.json`, `.mocharc.jsonc`
+- `.mocharc.yaml`, `.mocharc.yml`
+- `mocha` section in `package.json`
+
+Supported options include: timeout, slow, grep, bail, retries, require, and more.
+
+Configuration changes are automatically detected and tests are rediscovered.
+
+## 🎨 Test Output Features
+
+### Nested Suite Formatting
+```
+test/example.test.ts
+Running 5 tests...
+
+Example Test Suite
+  Math operations
+    ✓ should add two numbers correctly (2ms)
+    ✓ should multiply two numbers correctly (1ms)
+  String operations
+    ✓ should concatenate strings (1ms)
+
+Test Results: 3 passing (4ms)
+```
+
+### Failure Details
+```
+Failed Tests:
+
+  Math Suite > Advanced > should calculate correctly
+     Expected values to be strictly equal:
+     
+     42 !== 41
+
+     + expected - actual
+     -42
+     +41
+
+     at Context.<anonymous> (test/math.spec.js:15:14)
+```
+
+### Slow Test Warnings
+Tests exceeding the slow threshold (default 75ms) are highlighted:
+```
+✓ should process data ⚠ slow (150ms)
+```
+
+## 🔧 Requirements
+
+- **VS Code**: 1.88.0 or higher
+- **Mocha**: 10.x
+- **c8**: 10.x (for coverage support)
+
+## 🤝 Contributing
+
+Found a bug or have a feature request? Please open an issue on [GitHub](https://github.com/origooo/vscode-mocha-test-adapter/issues).
+
+## 📝 License
+
+MIT - See [LICENSE](LICENSE) for details
+
+## 🙏 Acknowledgments
+
+Built with VS Code's Testing API and powered by Mocha and c8.
+
+---
+
+**Enjoy testing!** 🧪✨
 
 When tests fail, you get detailed information:
 

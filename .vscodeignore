@@ -1,3 +1,25 @@
-dist
-node_modules
+# Source files (only ship compiled dist/)
+src/
+*.ts
+tsconfig.json
+.vscode/
+.vscode-test/
+
+# Development files
+node_modules/
+.yarn/
+.pnp.*
 *.vsix
+.eslintrc.json
+eslint.config.js
+.prettierrc
+
+# Documentation that's not needed
+PUBLISH.md
+DEVELOPMENT.md
+example.test.ts
+example-tags.test.ts
+
+# Git
+.git/
+.gitignore

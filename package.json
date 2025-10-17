@@ -1,9 +1,9 @@
 {
-  "name": "copilot-mocha-extension",
+  "name": "vscode-mocha-test-adapter",
   "displayName": "Mocha Test Adapter",
-  "description": "Mocha test adapter for VS Code using the native Testing API",
+  "description": "Mocha test adapter for VS Code using the native Testing API with coverage, continuous run, and diagnostics",
   "version": "0.0.15",
-  "publisher": "your-publisher-name",
+  "publisher": "origo",
   "license": "MIT",
   "type": "module",
   "packageManager": "yarn@4.6.0",
@@ -13,6 +13,23 @@
   "categories": [
     "Testing"
   ],
+  "keywords": [
+    "mocha",
+    "test",
+    "testing",
+    "unit test",
+    "tdd",
+    "coverage",
+    "test adapter"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/origooo/vscode-mocha-test-adapter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/origooo/vscode-mocha-test-adapter/issues"
+  },
+  "homepage": "https://github.com/origooo/vscode-mocha-test-adapter#readme",
   "activationEvents": [
     "workspaceContains:**/*.test.{js,ts}",
     "workspaceContains:**/*.spec.{js,ts}"
