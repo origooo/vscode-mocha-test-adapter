@@ -2,6 +2,63 @@
 
 All notable changes to the "Mocha Test Adapter" extension will be documented in this file.
 
+## [0.0.15] - 2025-10-17
+
+### Added
+- **Failure Grouping in Summary**: Detailed failure report at end of test run
+  - Failed tests grouped by suite for easier navigation
+  - Each failure numbered sequentially (1), 2), 3), etc.)
+  - Suite path shown inline with test name for context (e.g., "Suite > Test")
+  - Full error messages displayed with dimmed formatting
+  - Expected vs Actual comparison for assertion failures
+  - Stack traces included (first 3 frames) for debugging
+  - Makes it easy to review all failures without scrolling through output
+  - Perfect for fixing multiple test failures in one session
+
+### Fixed
+- **File-Specific Test Results**: Fixed issue where Mocha config caused all test files to run together
+  - Test file path now placed at end of args to override config spec patterns
+  - Failures now only appear in their own file's output
+  - Test statistics accurate for each individual file
+  - Filters test results to match only TestItems from current file
+  - Resolves duplicate failure reports across multiple test files
+- **Multi-word Suite Names**: Fixed suite name splitting in output formatting
+  - Suite names with spaces no longer split into multiple levels
+  - Uses TestItem hierarchy directly instead of parsing fullTitle
+  - Preserves original suite structure from test discovery
+- **Test Run Header**: Added file path to test output header
+  - Shows relative path from workspace root
+  - Displayed in cyan and bright for visibility
+  - Helps identify which file is being tested in multi-file runs
+
+### Technical Details
+- Created `formatFailureDetails()` method to collect and format failures
+- Added filtering logic to match tests against TestItems in current file
+- Moved test file path to end of Mocha args array for precedence
+- Uses `formatTestResultsWithTestItems()` to leverage existing TestItem structure
+- Filters `testResults` Map before calculating stats for accuracy
+- Improved failure detail formatting with inline suite context
+
+## [0.0.14] - 2025-10-17
+
+### Added
+- **Nested Suite Output Formatting**: Enhanced test output with better visual hierarchy
+  - Suite headers displayed with proper indentation and structure
+  - Tests grouped under their parent suites for better organization
+  - Uses TestItem hierarchy for accurate multi-word suite names
+  - Cleaner, more readable output in Test Results panel
+  - Recursive suite formatting shows full test structure at a glance
+  - Pending tests (○), passed tests (✓), and failed tests (✗) all properly nested
+  - Makes it easier to understand test organization and context
+
+### Technical Details
+- Created `formatTestResultsWithTestItems()` method using TestItem structure
+- Walks TestItem hierarchy to format output with proper nesting
+- Formats output with proper indentation (2 spaces per level)
+- Suite names displayed in bright white for visibility
+- Replaced dual spec/JSON reporter approach with single JSON reporter + custom formatting
+- More efficient: only one Mocha execution instead of two
+
 ## [0.0.13] - 2025-10-17
 
 ### Added

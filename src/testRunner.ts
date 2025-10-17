@@ -928,11 +928,10 @@ export class TestRunner {
     const mochaPath = await this.getMochaPath(workspacePath, isPnP);
     this.outputChannel.appendLine(`  ✓ Mocha path: ${mochaPath}`);
     
-    // Build the command - run twice: once with spec for output, once with json for parsing
+    // Build the command - put file path at the end to ensure it takes precedence over config
     const baseArgs = [
       ...nodeArgs,
       mochaPath,
-      testFilePath,
       '--ui', 'bdd',
       '--timeout', this.config.timeout.toString(),
       '--slow', this.config.slow.toString(),
@@ -963,11 +962,13 @@ export class TestRunner {
     const jsonArgs = [
       ...baseArgs,
       '--reporter', 'json', // Use JSON reporter for parsing results
+      testFilePath, // File path at the end to override any spec patterns from config
     ];
 
     const specArgs = [
       ...baseArgs,
       '--reporter', 'spec', // Use spec reporter for clean terminal output
+      testFilePath, // File path at the end to override any spec patterns from config
     ];
 
     this.outputChannel.appendLine(`  Running command: node ${jsonArgs.join(' ')}`);
@@ -987,48 +988,19 @@ export class TestRunner {
     >();
 
     try {
-      // Add test run header
+      // Add test run header with file path
       const testCount = this.countTests(fileItem);
-      const header = `\r\n${this.colors.bright}${this.colors.cyan}Running ${testCount} test${testCount !== 1 ? 's' : ''}...${this.colors.reset}\r\n`;
-      run.appendOutput(header);
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(fileItem.uri!);
+      const relativePath = workspaceFolder 
+        ? path.relative(workspaceFolder.uri.fsPath, testFilePath)
+        : path.basename(testFilePath);
       
-      // First, run with spec reporter for clean output display
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn('node', specArgs, {
-          cwd: workspacePath,
-          env: {
-            ...process.env,
-            // Don't set NODE_OPTIONS since we're passing nodeArgs directly in the command
-          },
-        });
-
-        child.stdout?.on('data', (data) => {
-          const output = data.toString();
-          this.outputChannel.appendLine(`  [stdout] ${output.trim()}`);
-          // Append clean spec output to the run for display in Test Results
-          run.appendOutput(output.replace(/\n/g, '\r\n'));
-        });
-
-        child.stderr?.on('data', (data) => {
-          const output = data.toString();
-          this.outputChannel.appendLine(`  [stderr] ${output.trim()}`);
-          // Append error output to the run
-          run.appendOutput(output.replace(/\n/g, '\r\n'));
-        });
-
-        child.on('error', (error) => {
-          this.outputChannel.appendLine(
-            `  ❌ Failed to spawn Mocha (spec): ${error.message}`
-          );
-          reject(error);
-        });
-
-        child.on('close', () => {
-          resolve();
-        });
-      });
-
-      // Then, run with JSON reporter for parsing test results
+      const header = `\r\n${this.colors.bright}${this.colors.cyan}${relativePath}${this.colors.reset}\r\n`;
+      const subheader = `${this.colors.dim}Running ${testCount} test${testCount !== 1 ? 's' : ''}...${this.colors.reset}\r\n\r\n`;
+      run.appendOutput(header + subheader);
+      
+      // Run with JSON reporter to get all test data and format it ourselves
+      let allTests: any[] = [];
       await new Promise<void>((resolve, reject) => {
         let stdout = '';
         let stderr = '';
@@ -1103,6 +1075,9 @@ export class TestRunner {
 
             // Process test results
             if (results.tests) {
+              // Store all tests for formatting
+              allTests = results.tests;
+              
               for (const test of results.tests) {
                 // Log test properties to see what's available
                 const testProps = Object.keys(test).join(', ');
@@ -1140,8 +1115,14 @@ export class TestRunner {
                   pending: true,
                   duration: 0,
                 });
+                // Add pending tests to allTests for formatting
+                allTests.push(test);
               }
             }
+
+            // Format and append test results with suite hierarchy using TestItem structure
+            const formattedOutput = this.formatTestResultsWithTestItems(fileItem, testResults);
+            run.appendOutput(formattedOutput);
 
             resolve();
           } catch (parseError) {
@@ -1169,8 +1150,52 @@ export class TestRunner {
       this.updateTestResults(fileItem, run, testResults);
       this.outputChannel.appendLine('  ✓ Test results updated');
       
+      // Add failure details if there are failures (only for this file)
+      // Collect all test titles from this file's TestItems
+      const testTitlesInFile = new Set<string>();
+      const collectTestTitles = (item: vscode.TestItem) => {
+        const data = this.testData.get(item);
+        if (data?.type === ItemType.Test) {
+          const fullTitlePath = this.buildFullTitlePath(item);
+          testTitlesInFile.add(fullTitlePath);
+          testTitlesInFile.add(item.label); // Also add just the label
+        }
+        item.children.forEach(child => collectTestTitles(child));
+      };
+      fileItem.children.forEach(child => collectTestTitles(child));
+      
+      const failedTestsInFile = allTests.filter(test => {
+        const isPending = test.pending === true || test.skipped === true;
+        const passed = !isPending && (!test.err || (typeof test.err === 'object' && Object.keys(test.err).length === 0));
+        const isFailed = !isPending && !passed;
+        
+        // Check if this test belongs to the current file
+        const belongsToFile = testTitlesInFile.has(test.fullTitle) || 
+                              testTitlesInFile.has(test.title) ||
+                              Array.from(testTitlesInFile).some(title => test.fullTitle?.endsWith(title));
+        
+        return isFailed && belongsToFile;
+      });
+      
+      if (failedTestsInFile.length > 0) {
+        const failureDetails = this.formatFailureDetails(failedTestsInFile);
+        if (failureDetails) {
+          run.appendOutput(failureDetails);
+        }
+      }
+      
+      // Filter testResults to only include tests from this file for accurate stats
+      const testResultsForFile = new Map<string, { passed: boolean; pending?: boolean; duration?: number }>();
+      for (const [fullTitle, result] of testResults.entries()) {
+        const belongsToFile = testTitlesInFile.has(fullTitle) || 
+                              Array.from(testTitlesInFile).some(title => fullTitle.endsWith(title));
+        if (belongsToFile) {
+          testResultsForFile.set(fullTitle, result);
+        }
+      }
+      
       // Add formatted summary to test output
-      const stats = this.calculateStats(testResults);
+      const stats = this.calculateStats(testResultsForFile);
       const summary = this.formatTestSummary(stats);
       run.appendOutput(summary);
       
@@ -1705,6 +1730,166 @@ export class TestRunner {
   }
 
   /**
+   * Format test results with nested suite hierarchy using TestItem structure
+   */
+  private formatTestResultsWithTestItems(
+    fileItem: vscode.TestItem,
+    testResults: Map<string, { passed: boolean; pending?: boolean; duration?: number }>
+  ): string {
+    let output = '';
+    
+    const formatItem = (item: vscode.TestItem, depth: number): void => {
+      const data = this.testData.get(item);
+      const indent = '  '.repeat(depth);
+      
+      if (data?.type === ItemType.Suite) {
+        // Print suite header
+        output += `${indent}${this.colors.bright}${item.label}${this.colors.reset}\r\n`;
+        
+        // Recurse into children
+        item.children.forEach(child => formatItem(child, depth + 1));
+      } else if (data?.type === ItemType.Test) {
+        // Find result for this test
+        const fullTitlePath = this.buildFullTitlePath(item);
+        let result = testResults.get(fullTitlePath);
+        
+        // Try to find by checking if any result key ends with our path
+        if (!result) {
+          for (const [key, value] of testResults.entries()) {
+            if (key.endsWith(fullTitlePath)) {
+              result = value;
+              break;
+            }
+          }
+        }
+        
+        if (result) {
+          // Format test line
+          const isPending = result.pending === true;
+          const passed = !isPending && result.passed;
+          
+          // Format duration with slow indicator
+          const isSlow = result.duration !== undefined && result.duration > this.config.slow && passed;
+          const durationColor = isSlow ? this.colors.yellow : this.colors.dim;
+          const slowIndicator = isSlow ? ` ${this.colors.yellow}⚠ slow${this.colors.reset}` : '';
+          const durationStr = result.duration ? ` ${durationColor}(${this.formatDuration(result.duration)})${this.colors.reset}${slowIndicator}` : '';
+          
+          if (isPending) {
+            output += `${indent}${this.colors.yellow}○${this.colors.reset} ${this.colors.dim}${item.label}${this.colors.reset}\r\n`;
+          } else if (passed) {
+            output += `${indent}${this.colors.green}✓${this.colors.reset} ${this.colors.dim}${item.label}${this.colors.reset}${durationStr}\r\n`;
+          } else {
+            output += `${indent}${this.colors.red}✗${this.colors.reset} ${item.label}${durationStr}\r\n`;
+          }
+        }
+      }
+    };
+    
+    // Format all children of the file
+    fileItem.children.forEach(child => formatItem(child, 0));
+    
+    return output;
+  }
+
+  /**
+   * Format test results with nested suite hierarchy (fallback when TestItems not available)
+   */
+  private formatTestResultsWithSuites(tests: any[]): string {
+    interface SuiteNode {
+      name: string;
+      tests: any[];
+      suites: Map<string, SuiteNode>;
+    }
+    
+    // Build suite hierarchy from flat test list
+    const root: SuiteNode = { name: '', tests: [], suites: new Map() };
+    
+    for (const test of tests) {
+      // Parse fullTitle to extract suite path and test title
+      // Mocha's fullTitle is space-separated: "Suite1 Suite2 test title"
+      // But we need to handle the fact that suite names and test titles can contain spaces
+      const fullTitle = test.fullTitle || test.title || '';
+      const title = test.title || '';
+      
+      // Extract suite path by checking if fullTitle ends with title
+      let suitePath: string[] = [];
+      if (fullTitle !== title && fullTitle.endsWith(title)) {
+        // Remove test title from end to get suite string
+        const suiteStr = fullTitle.substring(0, fullTitle.length - title.length).trim();
+        
+        // The suite hierarchy in Mocha uses the titlePath() method which joins with space
+        // We need to reconstruct the hierarchy by looking at our TestItem structure
+        // For now, treat the entire suite path as a single suite name
+        // This is a simplification but works for most cases
+        if (suiteStr) {
+          suitePath = [suiteStr];
+        }
+      }
+      
+      // Navigate/create suite hierarchy
+      let currentNode = root;
+      for (const suiteName of suitePath) {
+        if (!currentNode.suites.has(suiteName)) {
+          currentNode.suites.set(suiteName, {
+            name: suiteName,
+            tests: [],
+            suites: new Map(),
+          });
+        }
+        currentNode = currentNode.suites.get(suiteName)!;
+      }
+      
+      // Add test to the current suite node
+      currentNode.tests.push(test);
+    }
+    
+    // Recursively format the suite hierarchy
+    const formatNode = (node: SuiteNode, depth: number): string => {
+      let output = '';
+      const indent = '  '.repeat(depth);
+      
+      // Print suite header if not root
+      if (node.name) {
+        output += `${indent}${this.colors.bright}${node.name}${this.colors.reset}\r\n`;
+      }
+      
+      // Print child suites first
+      for (const suite of node.suites.values()) {
+        output += formatNode(suite, depth + (node.name ? 1 : 0));
+      }
+      
+      // Print tests in this suite
+      for (const test of node.tests) {
+        const testDepth = depth + (node.name ? 1 : 0);
+        const testIndent = '  '.repeat(testDepth);
+        
+        // Determine test state
+        const isPending = test.pending === true || test.skipped === true;
+        const passed = !isPending && (!test.err || (typeof test.err === 'object' && Object.keys(test.err).length === 0));
+        
+        // Format duration with slow indicator
+        const isSlow = test.duration !== undefined && test.duration > this.config.slow && passed;
+        const durationColor = isSlow ? this.colors.yellow : this.colors.dim;
+        const slowIndicator = isSlow ? ` ${this.colors.yellow}⚠ slow${this.colors.reset}` : '';
+        const durationStr = test.duration ? ` ${durationColor}(${this.formatDuration(test.duration)})${this.colors.reset}${slowIndicator}` : '';
+        
+        // Format test line
+        if (isPending) {
+          output += `${testIndent}${this.colors.yellow}○${this.colors.reset} ${this.colors.dim}${test.title}${this.colors.reset}\r\n`;
+        } else if (passed) {
+          output += `${testIndent}${this.colors.green}✓${this.colors.reset} ${this.colors.dim}${test.title}${this.colors.reset}${durationStr}\r\n`;
+        } else {
+          output += `${testIndent}${this.colors.red}✗${this.colors.reset} ${test.title}${durationStr}\r\n`;
+        }
+      }
+      
+      return output;
+    };
+    
+    return formatNode(root, 0);
+  }
+
+  /**
    * Format a single test result line with colors
    */
   private formatTestResult(test: {
@@ -1770,6 +1955,97 @@ export class TestRunner {
       slow,
       duration: totalDuration,
     };
+  }
+
+  /**
+   * Format failure details section with grouped error information
+   */
+  private formatFailureDetails(tests: any[]): string {
+    // Filter for failed tests only
+    const failedTests = tests.filter(test => {
+      const isPending = test.pending === true || test.skipped === true;
+      const passed = !isPending && (!test.err || (typeof test.err === 'object' && Object.keys(test.err).length === 0));
+      return !isPending && !passed;
+    });
+
+    if (failedTests.length === 0) {
+      return '';
+    }
+
+    let output = `\r\n${this.colors.bright}${this.colors.red}Failed Tests:${this.colors.reset}\r\n\r\n`;
+
+    // Group failures by suite
+    interface FailureGroup {
+      suitePath: string[];
+      tests: any[];
+    }
+
+    const groups = new Map<string, FailureGroup>();
+
+    for (const test of failedTests) {
+      const fullTitle = test.fullTitle || test.title || '';
+      const title = test.title || '';
+      
+      // Extract suite path - treat the entire suite hierarchy as one string
+      // to preserve multi-word suite names
+      let suiteName = '';
+      if (fullTitle !== title && fullTitle.endsWith(title)) {
+        suiteName = fullTitle.substring(0, fullTitle.length - title.length).trim();
+      }
+      
+      const suiteKey = suiteName || '(root)';
+      
+      if (!groups.has(suiteKey)) {
+        groups.set(suiteKey, { suitePath: suiteName ? [suiteName] : [], tests: [] });
+      }
+      
+      groups.get(suiteKey)!.tests.push(test);
+    }
+
+    // Format each group
+    let failureNumber = 1;
+    for (const group of groups.values()) {
+      // Print each failed test in the group with full context
+      for (const test of group.tests) {
+        // Show suite path as context if available
+        const context = group.suitePath.length > 0 ? `${this.colors.dim}${group.suitePath[0]}${this.colors.reset} > ` : '';
+        output += `  ${this.colors.red}${failureNumber})${this.colors.reset} ${context}${test.title}\r\n`;
+        
+        // Add error message if available
+        if (test.err?.message) {
+          const errorLines = test.err.message.split('\n');
+          for (const line of errorLines) {
+            output += `     ${this.colors.dim}${line}${this.colors.reset}\r\n`;
+          }
+        }
+        
+        // Add expected vs actual if available
+        if (test.err?.expected !== undefined && test.err?.actual !== undefined) {
+          output += `\r\n     ${this.colors.green}+ expected${this.colors.reset} ${this.colors.red}- actual${this.colors.reset}\r\n\r\n`;
+          output += `     ${this.colors.red}-${this.formatValue(test.err.actual)}${this.colors.reset}\r\n`;
+          output += `     ${this.colors.green}+${this.formatValue(test.err.expected)}${this.colors.reset}\r\n`;
+        }
+        
+        // Add stack trace (first few relevant lines)
+        if (test.err?.stack) {
+          const stackLines = test.err.stack.split('\n')
+            .filter((line: string) => line.trim().startsWith('at '))
+            .slice(0, 3); // Show first 3 stack frames
+          
+          if (stackLines.length > 0) {
+            output += `\r\n`;
+            for (const line of stackLines) {
+              output += `     ${this.colors.dim}${line.trim()}${this.colors.reset}\r\n`;
+            }
+          }
+        }
+        
+        output += `\r\n`;
+        failureNumber++;
+      }
+    }
+
+    return output;
   }
 }
 
