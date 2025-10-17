@@ -2,6 +2,25 @@
 
 All notable changes to the "Mocha Test Adapter" extension will be documented in this file.
 
+## [0.0.13] - 2025-10-17
+
+### Added
+- **Test Timing Thresholds**: Automatic detection and highlighting of slow tests
+  - Tests exceeding the slow threshold display a yellow `⚠ slow` indicator
+  - Uses Mocha's `slow` configuration option (default: 75ms)
+  - Configurable via `.mocharc.json`, `.mocharc.js`, or `package.json`
+  - Slow test count included in summary: "X passing, Y failing, Z skipped, W slow"
+  - Only counts passed tests as slow (failed tests already highlighted)
+  - Helps identify performance issues during TDD workflows
+  - Duration displayed in yellow for slow tests to draw attention
+
+### Technical Details
+- Updated `formatTestResult()` to detect tests with `duration > config.slow`
+- Added slow indicator: `${this.colors.yellow}⚠ slow${this.colors.reset}`
+- Modified `calculateStats()` to count slow tests separately
+- Updated `formatTestSummary()` to display slow test count in summary
+- Duration formatting changes to yellow color for slow tests
+
 ## [0.0.12] - 2025-10-17
 
 ### Added

@@ -2,7 +2,7 @@
   "name": "copilot-mocha-extension",
   "displayName": "Mocha Test Adapter",
   "description": "Mocha test adapter for VS Code using the native Testing API",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "publisher": "your-publisher-name",
   "license": "MIT",
   "type": "module",

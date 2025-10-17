@@ -1671,9 +1671,10 @@ export class TestRunner {
     passed: number;
     failed: number;
     skipped: number;
+    slow: number;
     duration: number;
   }): string {
-    const { total, passed, failed, skipped, duration } = stats;
+    const { total, passed, failed, skipped, slow, duration } = stats;
     
     const parts: string[] = [];
     
@@ -1692,6 +1693,11 @@ export class TestRunner {
       parts.push(`${this.colors.yellow}${skipped} skipped${this.colors.reset}`);
     }
     
+    // Slow tests (yellow warning)
+    if (slow > 0) {
+      parts.push(`${this.colors.yellow}${slow} slow${this.colors.reset}`);
+    }
+    
     // Total duration
     const durationStr = this.formatDuration(duration);
     
@@ -1708,7 +1714,10 @@ export class TestRunner {
     depth: number;
   }): string {
     const indent = '  '.repeat(test.depth);
-    const durationStr = test.duration ? ` ${this.colors.dim}(${this.formatDuration(test.duration)})${this.colors.reset}` : '';
+    const isSlow = test.duration !== undefined && test.duration > this.config.slow;
+    const durationColor = isSlow ? this.colors.yellow : this.colors.dim;
+    const slowIndicator = isSlow ? ` ${this.colors.yellow}⚠ slow${this.colors.reset}` : '';
+    const durationStr = test.duration ? ` ${durationColor}(${this.formatDuration(test.duration)})${this.colors.reset}${slowIndicator}` : '';
     
     if (test.passed) {
       return `${indent}${this.colors.green}✓${this.colors.reset} ${this.colors.dim}${test.title}${this.colors.reset}${durationStr}\r\n`;
@@ -1729,11 +1738,13 @@ export class TestRunner {
     passed: number;
     failed: number;
     skipped: number;
+    slow: number;
     duration: number;
   } {
     let passed = 0;
     let failed = 0;
     let skipped = 0;
+    let slow = 0;
     let totalDuration = 0;
     
     for (const result of results.values()) {
@@ -1741,6 +1752,10 @@ export class TestRunner {
         skipped++;
       } else if (result.passed) {
         passed++;
+        // Count slow tests (only for passed tests, failed tests are already highlighted)
+        if (result.duration && result.duration > this.config.slow) {
+          slow++;
+        }
       } else {
         failed++;
       }
@@ -1752,6 +1767,7 @@ export class TestRunner {
       passed,
       failed,
       skipped,
+      slow,
       duration: totalDuration,
     };
   }
