@@ -8,18 +8,22 @@ tsconfig.json
 # Development files
 node_modules/
 .yarn/
+.yarnrc.yml
 .pnp.*
 *.vsix
-.eslintrc.json
-eslint.config.js
+.editorconfig
 .prettierrc
+eslint.config.js
 
-# Documentation that's not needed
+# Documentation that's not needed (keep README, LICENSE, CHANGELOG)
 PUBLISH.md
 DEVELOPMENT.md
+CONFIGURATION.md
+COVERAGE.md
 example.test.ts
 example-tags.test.ts
 
-# Git
+# Git files
 .git/
 .gitignore
+.gitattributes

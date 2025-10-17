@@ -3,12 +3,13 @@
   "displayName": "Mocha Test Adapter",
   "description": "Mocha test adapter for VS Code using the native Testing API with coverage, continuous run, and diagnostics",
   "version": "0.0.15",
-  "publisher": "origo",
+  "publisher": "origooo",
   "license": "MIT",
   "type": "module",
   "packageManager": "yarn@4.6.0",
   "engines": {
-    "vscode": "^1.88.0"
+    "vscode": "^1.88.0",
+    "node": ">=18.0.0"
   },
   "categories": [
     "Testing"
@@ -107,6 +108,7 @@
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^8.11.0",
     "@typescript-eslint/parser": "^8.11.0",
+    "@vscode/vsce": "^3.6.2",
     "eslint": "^9.13.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-mocha": "^10.5.0",

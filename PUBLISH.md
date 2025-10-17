@@ -8,26 +8,31 @@
 ## Commands
 
 ```bash
-# Install vsce globally
-npm install -g @vscode/vsce
-
-# Login to publisher account
-vsce login origo
+# Option 1: Use yarn dlx (runs vsce without installing globally)
+yarn dlx @vscode/vsce login origooo
 # Enter your PAT when prompted
 
 # Package the extension (creates .vsix file)
-vsce package
+yarn dlx @vscode/vsce package --no-dependencies --skip-license
+
+# Test locally by installing the .vsix
+code --install-extension vscode-mocha-test-adapter-0.0.15.vsix
 
 # Publish to marketplace
-vsce publish
+yarn dlx @vscode/vsce publish --no-dependencies --skip-license
 
-# Or do both in one command
-vsce publish
+# Option 2: Install vsce as dev dependency (recommended for CI/CD)
+yarn add -D @vscode/vsce
 
-# Publish a specific version
-vsce publish minor  # 0.0.15 -> 0.1.0
-vsce publish patch  # 0.0.15 -> 0.0.16
-vsce publish major  # 0.0.15 -> 1.0.0
+# Then use with yarn:
+yarn vsce login origooo
+yarn vsce package --no-dependencies
+yarn vsce publish --no-dependencies
+
+# Publish a specific version bump
+yarn dlx @vscode/vsce publish minor --no-dependencies  # 0.0.15 -> 0.1.0
+yarn dlx @vscode/vsce publish patch --no-dependencies  # 0.0.15 -> 0.0.16
+yarn dlx @vscode/vsce publish major --no-dependencies  # 0.0.15 -> 1.0.0
 ```
 
 ## What Gets Published
@@ -40,7 +45,7 @@ vsce publish major  # 0.0.15 -> 1.0.0
 ## After Publishing
 
 Your extension will be available at:
-- Marketplace: https://marketplace.visualstudio.com/items?itemName=origo.vscode-mocha-test-adapter
+- Marketplace: https://marketplace.visualstudio.com/items?itemName=origooo.vscode-mocha-test-adapter
 - Users can install by searching "Mocha Test Adapter" in VS Code Extensions
 
 ## Updating
@@ -54,5 +59,5 @@ Your extension will be available at:
 
 ```bash
 # Remove extension from marketplace
-vsce unpublish origo.vscode-mocha-test-adapter
+yarn dlx @vscode/vsce unpublish origooo.vscode-mocha-test-adapter
 ```

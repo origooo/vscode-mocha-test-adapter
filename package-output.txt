@@ -1,0 +1,83 @@
+Debugger listening on ws://127.0.0.1:64949/3340e2c7-e7a9-42be-842f-72110be95df0
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+➤ YN0000: · Yarn 4.6.0
+➤ YN0000: ┌ Resolution step
+➤ YN0085: │ + @vscode/vsce@npm:3.6.2, @azu/format-text@npm:1.0.2, @azu/style-format@npm:1.0.1, @azure/abort-controller@npm:2.1.2, @azure/core-auth@npm:1.10.1, and 357 more.
+➤ YN0000: └ Completed in 1s 187ms
+➤ YN0000: ┌ Fetch step
+➤ YN0013: │ 354 packages were added to the project (+ 79.15 MiB).
+➤ YN0000: └ Completed in 0s 252ms
+➤ YN0000: ┌ Link step
+➤ YN0000: │ ESM support for PnP uses the experimental loader API and is therefore experimental
+➤ YN0007: │ @vscode/vsce-sign@npm:2.0.8 must be built because it never has been before or the last one failed
+➤ YN0007: │ keytar@npm:7.9.0 must be built because it never has been before or the last one failed
+➤ YN0000: └ Completed in 1s 192ms
+➤ YN0000: · Done with warnings in 2s 684ms
+
+Debugger listening on ws://127.0.0.1:65022/43181a63-e897-48b4-a12d-2f2810a963e7
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+ INFO  Detected presence of yarn.lock. Using 'yarn' instead of 'npm' (to override this pass '--no-yarn' on the command line).
+Executing prepublish script 'yarn run vscode:prepublish'...
+Debugger listening on ws://127.0.0.1:65033/0a16b806-a53d-493e-91be-93e09ea77586
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger listening on ws://127.0.0.1:65035/d6f71b2d-fdc2-4ed7-bd53-20321b98881a
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Debugger listening on ws://127.0.0.1:65041/b09017a3-0ca2-49da-a1e8-142248b0ffde
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+Waiting for the debugger to disconnect...
+Waiting for the debugger to disconnect...
+Waiting for the debugger to disconnect...
+ INFO  Files included in the VSIX:
+vscode-mocha-test-adapter-0.0.15.vsix
+├─ [Content_Types].xml 
+├─ extension.vsixmanifest 
+└─ extension/
+   ├─ LICENSE.txt [1.05 KB]
+   ├─ changelog.md [21.97 KB]
+   ├─ package-output.txt [1.86 KB]
+   ├─ package.json [3.07 KB]
+   ├─ readme.md [16.79 KB]
+   └─ dist/
+      ├─ configLoader.js [9.82 KB]
+      ├─ configLoader.js.map [7.3 KB]
+      ├─ coverageProvider.js [14.22 KB]
+      ├─ coverageProvider.js.map [11.75 KB]
+      ├─ diagnosticsProvider.js [3.89 KB]
+      ├─ diagnosticsProvider.js.map [2.62 KB]
+      ├─ extension.js [5.54 KB]
+      ├─ extension.js.map [4.65 KB]
+      ├─ mochaTestController.js [19.45 KB]
+      ├─ mochaTestController.js.map [15.92 KB]
+      ├─ testDiscovery.js [8.74 KB]
+      ├─ testDiscovery.js.map [7.34 KB]
+      ├─ testRunner.js [71.55 KB]
+      └─ testRunner.js.map [59.41 KB]
+
+ ERROR  secretlint loading errors
+
+----
+
+Failed to load rule module: @secretlint/secretlint-rule-preset-recommend
+
+Error: Failed to load secretlint's rule module: "@secretlint/secretlint-rule-preset-recommend" is not found.
+
+cwd: /Users/patrikbackstrom/Git/loopme/copilot-mocha-extension
+baseDir: 
+
+
+----
+
+Failed to load rule module: @secretlint/secretlint-rule-no-dotenv
+
+Error: Failed to load secretlint's rule module: "@secretlint/secretlint-rule-no-dotenv" is not found.
+
+cwd: /Users/patrikbackstrom/Git/loopme/copilot-mocha-extension
+baseDir: 
+
+Waiting for the debugger to disconnect...
+Waiting for the debugger to disconnect...
